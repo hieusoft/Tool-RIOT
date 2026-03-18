@@ -93,9 +93,11 @@ async def wait_for_selector(session_id, sel, tab_id=None, max_wait=20, interval=
 def set_status(session_id, status):
     if session_id in sessions:
         sessions[session_id]["status"] = status
-    for e in acct_log:
+    # Chi update entry moi nhat cua session nay
+    for e in reversed(acct_log):
         if e["session_id"] == session_id:
             e["status"] = status
+            break
     bridge.refresh_signal.emit()
 
 # ── Automation ────────────────────────────────────────────────────────────────

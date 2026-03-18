@@ -1,11 +1,15 @@
 """
-r.py — Entry point
+run.py — Entry point
 """
 
 import sys
+import os
 import threading
 import time
 from datetime import datetime
+
+# Đảm bảo thư mục chứa run.py được thêm vào sys.path
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from PyQt6.QtWidgets import QApplication
 
