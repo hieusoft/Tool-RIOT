@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <title>WS Tab Controller</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 280px;
+      background: #1a1a2e;
+      font-family: 'Segoe UI', sans-serif;
+      color: #eaeaea;
+    }
+
+    /* Header */
+    .header {
+      background: #0f3460;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .header .dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: #4ade80;
+      box-shadow: 0 0 6px #4ade80;
+      flex-shrink: 0;
+    }
+    .header .dot.offline { background: #f87171; box-shadow: 0 0 6px #f87171; }
+    .header h1 {
+      font-size: 13px;
+      font-weight: 600;
+      color: #53d8fb;
+      letter-spacing: 0.4px;
+    }
+
+    /* Body */
+    .body { padding: 16px; }
+
+    /* Session ID card */
+    .card {
+      background: #16213e;
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 14px;
+      border: 1px solid #0f3460;
+    }
+    .card .label {
+      font-size: 10px;
+      color: #8888aa;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 6px;
+    }
+    .card .value {
+      font-size: 12px;
+      font-family: 'Consolas', monospace;
+      color: #53d8fb;
+      word-break: break-all;
+    }
+
+    /* Status badge */
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .badge.idle    { background: #2a2a4a; color: #8888aa; }
+    .badge.ready   { background: #14532d; color: #4ade80; }
+    .badge.running { background: #1e3a5f; color: #53d8fb; }
+    .badge.done    { background: #064e3b; color: #34d399; }
+    .badge.error   { background: #450a0a; color: #f87171; }
+
+    /* Button */
+    .btn-ready {
+      width: 100%;
+      padding: 12px;
+      background: linear-gradient(135deg, #e94560, #c73652);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.5px;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+    .btn-ready:hover  { opacity: 0.9; transform: translateY(-1px); }
+    .btn-ready:active { transform: translateY(0); }
+    .btn-ready:disabled {
+      background: #333;
+      color: #666;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* Log */
+    .log-area {
+      margin-top: 14px;
+      background: #0d0d1a;
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 11px;
+      font-family: 'Consolas', monospace;
+      color: #8888aa;
+      max-height: 100px;
+      overflow-y: auto;
+      line-height: 1.6;
+    }
+    .log-area .ok    { color: #4ade80; }
+    .log-area .err   { color: #f87171; }
+    .log-area .info  { color: #53d8fb; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div class="dot" id="ws-dot"></div>
+  <h1>WS Tab Controller</h1>
+</div>
+
+<div class="body">
+
+  <div class="card">
+    <div class="label">Session ID</div>
+    <div class="value" id="session-id">Đang tải...</div>
+  </div>
+
+  <div class="status-row">
+    <span class="label" style="color:#8888aa;font-size:11px;">Trạng thái:</span>
+    <span class="badge idle" id="status-badge">Chờ</span>
+  </div>
+
+  <button class="btn-ready" id="btn-ready">⚡ Sẵn sàng</button>
+
+  <div class="log-area" id="log"></div>
+
+</div>
+
+<script src="popup.js"></script>
+</body>
+</html>
