@@ -160,18 +160,34 @@ async function handleCommand(message) {
   }
 }
 
+// Cho tab load xong (status = "complete"), polling moi 300ms, toi da 30s
+async function waitForTabLoad(tabId, maxMs = 30000) {
+  const start = Date.now();
+  while (Date.now() - start < maxMs) {
+    const tab = await chrome.tabs.get(tabId);
+    if (tab.status === "complete") return tab;
+    await new Promise(r => setTimeout(r, 300));
+  }
+  // Tra ve trang thai hien tai du chua complete
+  return await chrome.tabs.get(tabId);
+}
+
 async function openUrl(data) {
-  const url = data.url;
+  const url    = data.url;
   const newTab = data.newTab !== false;
   if (!url) throw new Error("Thiếu data.url");
   if (newTab) {
-    const tab = await chrome.tabs.create({ url, active: true });
-    return { tabId: tab.id, url: tab.url, status: tab.status };
+    const tab     = await chrome.tabs.create({ url, active: true });
+    const loaded  = await waitForTabLoad(tab.id);
+    return { tabId: loaded.id, url: loaded.url, status: loaded.status };
   } else {
-    const tab = await getActiveTab();
+    const tab = data.tabId
+      ? await chrome.tabs.get(data.tabId)
+      : await getActiveTab();
     if (!tab?.id) throw new Error("Không tìm thấy active tab");
     await chrome.tabs.update(tab.id, { url, active: true });
-    return { tabId: tab.id, url };
+    const loaded = await waitForTabLoad(tab.id);
+    return { tabId: loaded.id, url: loaded.url, status: loaded.status };
   }
 }
 async function reloadTab(data) {
