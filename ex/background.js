@@ -153,6 +153,7 @@ async function handleCommand(message) {
     case "fill":          return await sendToContentScript("fill", data);
     case "type_text":     return await sendToContentScript("type_text", data);
     case "get_title":     return await getTitle(data);
+    case "get_url":       return await getUrl(data);
     case "check_element": return await checkElement(data);
     case "scroll_element":return await scrollElement(data);
     default: throw new Error(`Action không hỗ trợ: ${action}`);
@@ -199,6 +200,12 @@ async function getTitle(data) {
   if (!tabId) throw new Error("Không tìm thấy tab");
   const tab = await chrome.tabs.get(tabId);
   return { tabId, title: tab.title, url: tab.url };
+}
+async function getUrl(data) {
+  const tabId = data.tabId || (await getActiveTab())?.id;
+  if (!tabId) throw new Error("Không tìm thấy tab");
+  const tab = await chrome.tabs.get(tabId);
+  return { tabId, url: tab.url };
 }
 async function executeScriptInTab(data) {
   const tabId = data.tabId || (await getActiveTab())?.id;

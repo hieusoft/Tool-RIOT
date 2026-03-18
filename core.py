@@ -181,11 +181,25 @@ async def run_signup(session_id, email, username, password):
 
             # ── Thanh cong ──
             set_status(session_id, "Hoan thanh")
-            log(f"[{sid}] Done! Dang logout qua URL...")
+            log(f"[{sid}] Done! Cho chuyen den trang download...")
+
+            # Cho tab chuyen den leagueoflegends.com/download truoc khi dang xuat
+            SUCCESS_URL = "leagueoflegends.com/en-us/download"
+            while True:
+                if _stop_flag:
+                    set_status(session_id, "Da dung")
+                    return
+                url_res = await send_and_wait(session_id, "get_url", tab({}), timeout=5)
+                current_url = (url_res or {}).get("result", {}).get("url", "")
+                if SUCCESS_URL in current_url:
+                    log(f"[{sid}] Da den trang download, bat dau dang xuat...")
+                    break
+                await asyncio.sleep(2)
 
             # Dieu huong den trang logout de xoa session Riot
             await sw("open_url", tab({"url": LOGOUT_URL}))
             await asyncio.sleep(3)  # Cho trang logout xu ly xong
+
 
             if _stop_flag:
                 set_status(session_id, "Da dung")
