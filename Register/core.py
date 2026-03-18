@@ -181,12 +181,11 @@ async def run_signup(session_id, email, username, password):
             set_status(session_id, "Hoan thanh")
             log(f"[{sid}] Done! Xoa cookie va tao account moi...")
 
-            # Ghi vao acct_log (cap nhat dong cuoi cung cho session nay neu trung)
-            # (da duoc append truoc do tu run_all_sessions, khong append them)
-
-            # Xoa cookie cua tab hien tai
+            # Mo trang dang xuat Riot
+            LOGOUT_URL = "https://login.riotgames.com/end-session-redirect?redirect_uri=https%3A%2F%2Fauth.riotgames.com%2Flogout"
+            await sw("open_url", tab({"url": LOGOUT_URL}))
             await sw("clear_cookies", tab({}))
-            await human_delay(1.0, 2.0)
+            await asyncio.sleep(3)  # Cho trang logout xu ly xong
 
             if _stop_flag:
                 set_status(session_id, "Da dung")
