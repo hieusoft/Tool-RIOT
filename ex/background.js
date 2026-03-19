@@ -148,14 +148,16 @@ async function handleCommand(message) {
     case "close_tab":     return await closeTab(data);
     case "activate_tab":  return await activateTab(data);
     case "list_tabs":     return await listTabs();
-    case "execute_script":return await executeScriptInTab(data);
-    case "click":         return await sendToContentScript("click", data);
-    case "fill":          return await sendToContentScript("fill", data);
-    case "type_text":     return await sendToContentScript("type_text", data);
-    case "get_title":     return await getTitle(data);
-    case "get_url":       return await getUrl(data);
-    case "check_element": return await checkElement(data);
-    case "scroll_element":return await scrollElement(data);
+    case "execute_script": return await executeScriptInTab(data);
+    case "fill_field":      return await fillFieldInTab(data);
+    case "click":           return await sendToContentScript("click", data);
+    case "fill":            return await sendToContentScript("fill", data);
+    case "type_text":       return await sendToContentScript("type_text", data);
+    case "get_title":       return await getTitle(data);
+    case "get_url":         return await getUrl(data);
+    case "get_cookies":     return await getCookies(data);
+    case "check_element":   return await checkElement(data);
+    case "scroll_element":  return await scrollElement(data);
     default: throw new Error(`Action không hỗ trợ: ${action}`);
   }
 }
@@ -226,13 +228,53 @@ async function getUrl(data) {
 async function executeScriptInTab(data) {
   const tabId = data.tabId || (await getActiveTab())?.id;
   if (!tabId) throw new Error("Không tìm thấy tab");
-  if (!data.code) throw new Error("Thiếu data.code");
+  const code = data.script || data.code;
+  if (!code) throw new Error("Thiếu data.script");
   const results = await chrome.scripting.executeScript({
     target: { tabId },
     func: (c) => { try { return { ok: true, result: eval(c) }; } catch(e) { return { ok: false, error: String(e) }; } },
-    args: [data.code]
+    args: [code]
   });
   return results?.[0]?.result || null;
+}
+
+// fill_field native — allFrames de tim trong iframe
+async function fillFieldInTab(data) {
+  const tabId = data.tabId || (await getActiveTab())?.id;
+  if (!tabId) throw new Error("Không tìm thấy tab");
+  if (!data.selector) throw new Error("Thiếu data.selector");
+  const results = await chrome.scripting.executeScript({
+    target: { tabId, allFrames: true },
+    func: (sel, val) => {
+      var el = document.querySelector(sel);
+      if (!el) return null; // null = khong co trong frame nay
+      el.focus();
+      try {
+        var desc = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+        if (desc && desc.set) desc.set.call(el, val);
+        else el.value = val;
+      } catch(e) { el.value = val; }
+      ['input','change','blur'].forEach(function(t) {
+        try { el.dispatchEvent(new Event(t, {bubbles:true,cancelable:true})); } catch(_){}
+      });
+      return { ok: true, value: el.value, frame: location.href };
+    },
+    args: [data.selector, String(data.value ?? "")]
+  });
+  // Tim frame nao tra ve ket qua thuc su (khong null)
+  const hit = (results || []).find(r => r?.result !== null && r?.result !== undefined);
+  if (hit) return hit.result;
+  return { ok: false, error: 'not found in any frame: ' + data.selector };
+}
+
+
+async function getCookies(data) {
+  const tabId = data.tabId || (await getActiveTab())?.id;
+  if (!tabId) throw new Error("Không tìm thấy tab");
+  const tab = await chrome.tabs.get(tabId);
+  const url = tab.url;
+  const cookies = await chrome.cookies.getAll({ url });
+  return { cookies: cookies.map(c => ({ name: c.name, value: c.value, domain: c.domain })) };
 }
 async function checkElement(data) {
   const tabId = data.tabId || (await getActiveTab())?.id;
