@@ -1,8 +1,9 @@
-const logEl    = document.getElementById("log");
+const logEl     = document.getElementById("log");
 const btnReady  = document.getElementById("btn-ready");
 const sessionEl = document.getElementById("session-id");
 const statusEl  = document.getElementById("status-badge");
 const wsDot     = document.getElementById("ws-dot");
+const modeEl    = document.getElementById("mode-select");
 
 function addLog(msg, cls = "") {
   const line = document.createElement("div");
@@ -17,51 +18,74 @@ function setStatus(label, cls) {
   statusEl.className = "badge " + cls;
 }
 
+// Khôi phục mode đã chọn từ storage
+chrome.storage.local.get(["selectedMode"], (res) => {
+  if (res.selectedMode) modeEl.value = res.selectedMode;
+});
+
+modeEl.addEventListener("change", () => {
+  const newMode = modeEl.value;
+  chrome.storage.local.set({ selectedMode: newMode });
+
+  // Reset UI về trạng thái chờ để đăng ký lại với mode mới
+  setStatus("Cho", "idle");
+  btnReady.disabled = false;
+  btnReady.textContent = "San sang";
+  btnReady.classList.remove("active");
+
+  // Thông báo background huỷ đăng ký cũ
+  chrome.runtime.sendMessage({ type: "unregister" });
+});
+
 // Lấy trạng thái hiện tại từ background
 chrome.runtime.sendMessage({ type: "get_state" }, (res) => {
   if (chrome.runtime.lastError) {
-    addLog("Lỗi kết nối background", "err");
+    addLog("Loi ket noi background", "err");
     return;
   }
   const { sessionId, wsConnected, registered } = res || {};
 
-  sessionEl.textContent = sessionId ? sessionId.substring(0, 20) + "…" : "Chưa khởi tạo";
+  sessionEl.textContent = sessionId ? sessionId.substring(0, 24) + "…" : "Chua khoi tao";
 
   if (wsConnected) {
-    wsDot.className = "dot";
-    addLog("WS đang kết nối", "info");
+    wsDot.className = "dot online";
+    addLog("WS dang ket noi", "info");
   } else {
     wsDot.className = "dot offline";
-    addLog("WS chưa kết nối", "err");
+    addLog("WS chua ket noi", "err");
   }
 
   if (registered) {
-    setStatus("Đã đăng ký ✓", "ready");
+    setStatus("Da dang ky", "ready");
     btnReady.disabled = true;
-    btnReady.textContent = "✅ Đã sẵn sàng";
-    addLog("Đã đăng ký với server", "ok");
+    btnReady.textContent = "Da san sang";
+    btnReady.classList.add("active");
+    addLog("Da dang ky voi server", "ok");
   } else {
-    setStatus("Chờ", "idle");
+    setStatus("Cho", "idle");
   }
 });
 
 // Nút Sẵn sàng
 btnReady.addEventListener("click", () => {
+  const mode = modeEl.value;
   btnReady.disabled = true;
-  btnReady.textContent = "⏳ Đang đăng ký...";
-  setStatus("Đang kết nối...", "running");
-  addLog("Gửi lệnh sẵn sàng...", "info");
+  btnReady.textContent = "Dang dang ky...";
+  setStatus("Dang ket noi...", "running");
+  addLog("Gui lenh san sang (mode=" + mode + ")...", "info");
 
-  chrome.runtime.sendMessage({ type: "register_now" }, (res) => {
+  chrome.runtime.sendMessage({ type: "register_now", mode }, (res) => {
     if (chrome.runtime.lastError || !res?.ok) {
-      addLog("Thất bại: " + (res?.error || chrome.runtime.lastError?.message), "err");
-      setStatus("Lỗi", "error");
+      addLog("That bai: " + (res?.error || chrome.runtime.lastError?.message), "err");
+      setStatus("Loi", "error");
       btnReady.disabled = false;
-      btnReady.textContent = "⚡ Sẵn sàng";
+      btnReady.textContent = "San sang";
+      btnReady.classList.remove("active");
       return;
     }
-    setStatus("Đã đăng ký ✓", "ready");
-    btnReady.textContent = "✅ Đã sẵn sàng";
-    addLog("Đăng ký thành công!", "ok");
+    setStatus("Da dang ky", "ready");
+    btnReady.textContent = "Da san sang";
+    btnReady.classList.add("active");
+    addLog("Dang ky thanh cong! mode=" + mode, "ok");
   });
 });

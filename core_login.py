@@ -1,10 +1,9 @@
 """
-core.py — Business logic, WebSocket server, shared state (Login)
+core_login.py — Business logic cho chức năng Login (không có WS server)
+WS server được quản lý tập trung bởi gui.py
 """
 
 import asyncio
-import threading
-import websockets
 import json
 import random
 import time
@@ -27,11 +26,11 @@ acct_log   = []   # [{session_id, username, password, status, note}]
 
 _req_id    = 0
 _loop      = None
-_gui       = None
 _running   = False
 _stop_flag = False
 
-ACCOUNT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "account.txt")
+BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
+ACCOUNT_FILE = os.path.join(BASE_DIR, "account_login.txt")
 
 # ── Signal bridge (asyncio → Qt) ──────────────────────────────────────────────
 class Bridge(QObject):
@@ -103,8 +102,7 @@ def set_status(session_id, status, note=""):
 # ── Load accounts ─────────────────────────────────────────────────────────────
 def load_accounts():
     """
-    Đọc file account.txt, mỗi dòng: username|password
-    Trả về list [{"username": ..., "password": ...}]
+    Đọc file account_login.txt, mỗi dòng: username|password
     """
     accounts = []
     if not os.path.exists(ACCOUNT_FILE):
@@ -118,7 +116,7 @@ def load_accounts():
             parts = line.split("|")
             if len(parts) >= 2:
                 accounts.append({"username": parts[0].strip(), "password": parts[1].strip()})
-    log(f">> Doc duoc {len(accounts)} tai khoan tu account.txt")
+    log(f">> Doc duoc {len(accounts)} tai khoan tu account_login.txt")
     return accounts
 
 # ── Automation ────────────────────────────────────────────────────────────────
@@ -177,7 +175,7 @@ async def run_login(session_id, username, password):
         await sw("click", tab({"selector": submit_sel}))
         log(f"[{sid}] Da bam Login, cho phan hoi...")
 
-        # ── 5. Cho hCaptcha neu xuat hien, lap moi 5s cho den khi bien mat ──
+        # ── 6. Cho hCaptcha neu xuat hien ──
         captcha_sel = 'iframe[src*="hcaptcha.com"]'
         log(f"[{sid}] Kiem tra hCaptcha...")
         while True:
@@ -190,10 +188,9 @@ async def run_login(session_id, username, password):
             await asyncio.sleep(5)
         log(f"[{sid}] hCaptcha da bien mat, tiep tuc...")
 
-        # ── 6. Kiem tra ket qua: thanh cong / sai mat khau / 2FA ──
+        # ── 7. Kiem tra ket qua ──
         await asyncio.sleep(3)
 
-        # Kiem tra loi "sai mat khau"
         error_sels = [
             '[data-testid="error-message"]',
             '[class*="error"]',
@@ -203,12 +200,10 @@ async def run_login(session_id, username, password):
             res_err = await send_and_wait(session_id, "check_element",
                                           tab({"selector": err_sel}), timeout=4)
             if (res_err or {}).get("result", {}).get("found"):
-                # Doc noi dung loi
                 log(f"[{sid}] !! Co thong bao loi hien thi — co the sai mat khau")
                 set_status(session_id, "Loi", "Sai mat khau")
                 return
 
-        # Kiem tra 2FA (MFA)
         mfa_sels = [
             '[data-testid="mfa-code-input"]',
             'input[placeholder*="code"]',
@@ -222,8 +217,6 @@ async def run_login(session_id, username, password):
                 set_status(session_id, "Can 2FA", "Bat 2FA")
                 return
 
-        # Kiem tra da dang nhap thanh cong: URL chuyen sang trang account
-        # hoac nut logout hien ra
         success_sels = [
             '[data-testid="username-display"]',
             'a[href*="logout"]',
@@ -236,37 +229,32 @@ async def run_login(session_id, username, password):
             if (res_ok or {}).get("result", {}).get("found"):
                 logged_in = True
                 break
-        await asyncio.sleep(5)        
+
+        await asyncio.sleep(5)
         if logged_in:
             log(f"[{sid}] ++ Dang nhap thanh cong: {username}")
             set_status(session_id, "Lay cookie...", "Dang nhap OK")
 
-            # ── Vao trang geo_info de lay cookie ──
             GEO_URL = "https://sspd.playersupport.riotgames.com/geo_info/ip"
             log(f"[{sid}] Mo trang lay cookie: {GEO_URL}")
             await sw("open_url", tab({"url": GEO_URL}))
             await asyncio.sleep(2)
 
-            # Lay toan bo cookie cua tab hien tai
             res_cookie = await send_and_wait(session_id, "get_cookies", tab({}), timeout=10)
             cookies = (res_cookie or {}).get("result", {}).get("cookies", [])
 
             if cookies:
-                # Dinh dang thanh chuoi key=value
                 cookie_str = "; ".join(f"{c['name']}={c['value']}" for c in cookies)
                 log(f"[{sid}] Cookie ({len(cookies)} muc): {cookie_str[:120]}...")
-                # Luu vao acct_log
                 for e in reversed(acct_log):
                     if e["session_id"] == session_id:
                         e["cookies"] = cookie_str
                         break
-                # Ghi ra file cookies.txt
-                cookie_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.txt")
+                cookie_file = os.path.join(BASE_DIR, "cookies.txt")
                 with open(cookie_file, "a", encoding="utf-8") as f:
                     f.write(f"{username}|{password}|{cookie_str}\n")
                 log(f"[{sid}] Da ghi cookie vao cookies.txt")
 
-                # ── Goi POST API start_workflow ──
                 WORKFLOW_URL = "https://sspd.playersupport.riotgames.com/arbiter/edge/start_workflow"
                 WORKFLOW_BODY = json.dumps({
                     "locale":  "en_US",
@@ -274,18 +262,12 @@ async def run_login(session_id, username, password):
                     "name":    "cu2_hub_pb.m3",
                     "channel": "WEB"
                 })
-                log(f"[{sid}] Goi POST {WORKFLOW_URL}...")
-
-                # Dung execute_script de chay fetch trong browser (cookie da co san)
                 js_code = f"""
 (async () => {{
   try {{
     const res = await fetch("{WORKFLOW_URL}", {{
       method: "POST",
-      headers: {{
-        "Content-Type": "application/json",
-        "Accept": "application/json"
-      }},
+      headers: {{ "Content-Type": "application/json", "Accept": "application/json" }},
       body: {repr(WORKFLOW_BODY)},
       credentials: "include"
     }});
@@ -303,13 +285,12 @@ async def run_login(session_id, username, password):
                 wf_body    = wf_result.get("body", "")
                 log(f"[{sid}] Workflow response HTTP {wf_status}: {wf_body[:200]}")
 
-                # Luu ket qua vao acct_log va file
                 for e in reversed(acct_log):
                     if e["session_id"] == session_id:
                         e["workflow_status"] = wf_status
                         e["workflow_body"]   = wf_body
                         break
-                wf_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "workflow_results.txt")
+                wf_file = os.path.join(BASE_DIR, "workflow_results.txt")
                 with open(wf_file, "a", encoding="utf-8") as f:
                     f.write(f"{username}|{password}|HTTP{wf_status}|{wf_body}\n")
                 log(f"[{sid}] Da ghi ket qua workflow vao workflow_results.txt")
@@ -318,10 +299,7 @@ async def run_login(session_id, username, password):
             else:
                 log(f"[{sid}] ?? Khong lay duoc cookie")
                 set_status(session_id, "Hoan thanh", "Khong co cookie")
-
-
         else:
-            # Van co the thanh cong nhung khong tim thay selector — ghi nhan
             log(f"[{sid}] ?? Khong ro ket qua — kiem tra thu cong: {username}")
             set_status(session_id, "Can kiem tra", "")
 
@@ -371,64 +349,13 @@ async def run_all_sessions():
     _running = False
     bridge.refresh_signal.emit()
 
-
-# ── WebSocket server ───────────────────────────────────────────────────────────
-async def ws_handler(websocket):
-    session_id = None
-    try:
-        async for raw in websocket:
-            try:
-                msg = json.loads(raw)
-            except Exception as e:
-                log(f"Parse error: {e}")
-                continue
-            t = msg.get("type")
-            if t == "register":
-                session_id = msg.get("sessionId")
-                if not session_id:
-                    continue
-                sessions[session_id] = {
-                    "ws": websocket, "info": msg,
-                    "pending": {}, "status": "Ket noi",
-                    "connected_at": time.time()
-                }
-                log(f"++ Session: {str(session_id)[:8]}... ({len(sessions)} total)")
-                bridge.refresh_signal.emit()
-            elif t == "result":
-                sid = msg.get("sessionId") or session_id
-                if sid and sid in sessions:
-                    rid = msg.get("requestId")
-                    p   = sessions[sid]["pending"]
-                    if rid and rid in p and not p[rid].done():
-                        p[rid].set_result(msg)
-    except websockets.exceptions.ConnectionClosed:
-        pass
-    except Exception as e:
-        log(f"Handler error: {e}")
-    finally:
-        if session_id and session_id in sessions:
-            sessions.pop(session_id, None)
-            log(f"-- Session ngat: {str(session_id)[:8]}... ({len(sessions)} con)")
-            bridge.refresh_signal.emit()
-
-async def _ws_server():
-    await websockets.serve(ws_handler, "127.0.0.1", 8000)
-    log("[WS] Server san sang: ws://127.0.0.1:8000")
-    await asyncio.Future()
-
-def start_asyncio_loop():
-    global _loop
-    _loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(_loop)
-    _loop.run_until_complete(_ws_server())
-
 # ── Public triggers (called from GUI) ─────────────────────────────────────────
-def trigger_run():
+def trigger_run(loop):
     global _running
     if _running:
         return
     _running = True
-    asyncio.run_coroutine_threadsafe(run_all_sessions(), _loop)
+    asyncio.run_coroutine_threadsafe(run_all_sessions(), loop)
 
 def trigger_stop():
     global _stop_flag, _running

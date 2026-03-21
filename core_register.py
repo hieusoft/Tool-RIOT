@@ -1,10 +1,9 @@
 """
-core.py — Business logic, WebSocket server, shared state
+core_register.py — Business logic cho chức năng Đăng ký tài khoản (không có WS server)
+WS server được quản lý tập trung bởi gui.py
 """
 
 import asyncio
-import threading
-import websockets
 import json
 import random
 import time
@@ -30,7 +29,6 @@ acct_log   = []   # [{session_id, username, email, password, status}]
 
 _req_id    = 0
 _loop      = None
-_gui       = None
 _running   = False
 _stop_flag = False
 
@@ -93,7 +91,6 @@ async def wait_for_selector(session_id, sel, tab_id=None, max_wait=20, interval=
 def set_status(session_id, status):
     if session_id in sessions:
         sessions[session_id]["status"] = status
-    # Chi update entry moi nhat cua session nay
     for e in reversed(acct_log):
         if e["session_id"] == session_id:
             e["status"] = status
@@ -104,7 +101,6 @@ def set_status(session_id, status):
 async def run_signup(session_id, email, username, password):
     sid = str(session_id)[:8]
 
-    # Vong lap vo han: chay lai sau moi lan thanh cong
     while True:
         if _stop_flag:
             set_status(session_id, "Da dung")
@@ -166,7 +162,6 @@ async def run_signup(session_id, email, username, password):
                         await human_delay(0.5, 1.0)
                         await sw("click", tab({"selector": '[data-testid="btn-accept-tos"]'}))
 
-                        # Chờ hCaptcha nếu xuất hiện, lặp mỗi 5s cho đến khi biến mất
                         captcha_sel = 'iframe[src*="hcaptcha.com"]'
                         log(f"[{sid}] Kiem tra hCaptcha...")
                         while True:
@@ -179,21 +174,18 @@ async def run_signup(session_id, email, username, password):
                             await asyncio.sleep(5)
                         log(f"[{sid}] hCaptcha da bien mat, tiep tuc...")
 
-            # ── Thanh cong: ghi log, xoa cookie, tao account moi, chay lai ──
             set_status(session_id, "Hoan thanh")
             log(f"[{sid}] Done! Xoa cookie va tao account moi...")
 
-            # Mo trang dang xuat Riot
             LOGOUT_URL = "https://login.riotgames.com/end-session-redirect?redirect_uri=https%3A%2F%2Fauth.riotgames.com%2Flogout"
             await sw("open_url", tab({"url": LOGOUT_URL}))
             await sw("clear_cookies", tab({}))
-            await asyncio.sleep(3)  # Cho trang logout xu ly xong
+            await asyncio.sleep(3)
 
             if _stop_flag:
                 set_status(session_id, "Da dung")
                 return
 
-            # Tao thong tin account moi cho vong lap tiep theo
             base     = re.sub(r'[^a-zA-Z0-9_]', '', fake.user_name())[:13] or "user"
             username = base + fake.numerify("##")
             email    = fake.email()
@@ -206,7 +198,7 @@ async def run_signup(session_id, email, username, password):
         except Exception as e:
             set_status(session_id, "Loi")
             log(f"[{sid}] Error: {e}")
-            await asyncio.sleep(3)  # Cho 3s roi thu lai
+            await asyncio.sleep(3)
 
 
 async def run_all_sessions():
@@ -236,63 +228,13 @@ async def run_all_sessions():
     _running = False
     bridge.refresh_signal.emit()
 
-# ── WebSocket server ───────────────────────────────────────────────────────────
-async def ws_handler(websocket):
-    session_id = None
-    try:
-        async for raw in websocket:
-            try:
-                msg = json.loads(raw)
-            except Exception as e:
-                log(f"Parse error: {e}")
-                continue
-            t = msg.get("type")
-            if t == "register":
-                session_id = msg.get("sessionId")
-                if not session_id:
-                    continue
-                sessions[session_id] = {
-                    "ws": websocket, "info": msg,
-                    "pending": {}, "status": "Ket noi",
-                    "connected_at": time.time()
-                }
-                log(f"++ Session: {str(session_id)[:8]}... ({len(sessions)} total)")
-                bridge.refresh_signal.emit()
-            elif t == "result":
-                sid = msg.get("sessionId") or session_id
-                if sid and sid in sessions:
-                    rid = msg.get("requestId")
-                    p   = sessions[sid]["pending"]
-                    if rid and rid in p and not p[rid].done():
-                        p[rid].set_result(msg)
-    except websockets.exceptions.ConnectionClosed:
-        pass
-    except Exception as e:
-        log(f"Handler error: {e}")
-    finally:
-        if session_id and session_id in sessions:
-            sessions.pop(session_id, None)
-            log(f"-- Session ngat: {str(session_id)[:8]}... ({len(sessions)} con)")
-            bridge.refresh_signal.emit()
-
-async def _ws_server():
-    await websockets.serve(ws_handler, "127.0.0.1", 8000)
-    log("[WS] Server san sang: ws://127.0.0.1:8000")
-    await asyncio.Future()
-
-def start_asyncio_loop():
-    global _loop
-    _loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(_loop)
-    _loop.run_until_complete(_ws_server())
-
 # ── Public triggers (called from GUI) ─────────────────────────────────────────
-def trigger_run():
+def trigger_run(loop):
     global _running
     if _running:
         return
     _running = True
-    asyncio.run_coroutine_threadsafe(run_all_sessions(), _loop)
+    asyncio.run_coroutine_threadsafe(run_all_sessions(), loop)
 
 def trigger_stop():
     global _stop_flag, _running

@@ -91,19 +91,21 @@ function scheduleReconnect() {
 }
 
 // ── Gửi register lên server ────────────────────────────────────────────────── 
-function sendRegister() {
+function sendRegister(mode) {
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     return false;
   }
+  const m = mode || "login";
   ws.send(JSON.stringify({
     type: "register",
     sessionId: SESSION_ID,
+    mode: m,
     source: "chrome-extension",
     userAgent: navigator.userAgent,
     time: new Date().toISOString()
   }));
   registered = true;
-  log("Registered! sessionId:", SESSION_ID);
+  log("Registered! sessionId:", SESSION_ID, "mode:", m);
   return true;
 }
 
@@ -118,16 +120,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === "unregister") {
+    registered = false;
+    // Tạo session ID mới và reconnect — server drop session cũ khi WS đóng
+    SESSION_ID = crypto.randomUUID();
+    chrome.storage.local.set({ sessionId: SESSION_ID });
+    log("New sessionId:", SESSION_ID);
+    if (ws) { try { ws.close(); } catch (_) {} ws = null; }
+    connectWebSocket();
+    sendResponse({ ok: true });
+    return true;
+  }
+
   if (msg.type === "register_now") {
     if (!wsConnected) {
-      sendResponse({ ok: false, error: "WS chưa kết nối" });
+      sendResponse({ ok: false, error: "WS chua ket noi" });
       return true;
     }
     if (registered) {
       sendResponse({ ok: true, already: true });
       return true;
     }
-    const ok = sendRegister();
+    const ok = sendRegister(msg.mode || "login");
     sendResponse({ ok, sessionId: SESSION_ID });
     return true;
   }

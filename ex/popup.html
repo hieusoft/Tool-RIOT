@@ -2,148 +2,208 @@
 <html lang="vi">
 <head>
   <meta charset="UTF-8" />
-  <title>WS Tab Controller</title>
+  <title>Hieusoft Riot</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
-      width: 280px;
-      background: #1a1a2e;
+      width: 270px;
+      background: #111215;
       font-family: 'Segoe UI', sans-serif;
-      color: #eaeaea;
+      color: #c8cdd6;
+      font-size: 13px;
     }
 
-    /* Header */
+    /* ── Header ── */
     .header {
-      background: #0f3460;
-      padding: 14px 16px;
+      padding: 13px 16px 12px;
+      border-bottom: 1px solid #1e2128;
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
     }
-    .header .dot {
-      width: 10px; height: 10px;
+    .dot {
+      width: 8px; height: 8px;
       border-radius: 50%;
-      background: #4ade80;
-      box-shadow: 0 0 6px #4ade80;
+      background: #3a3d45;
       flex-shrink: 0;
+      transition: background 0.3s;
     }
-    .header .dot.offline { background: #f87171; box-shadow: 0 0 6px #f87171; }
+    .dot.online  { background: #4caf82; }
+    .dot.offline { background: #e05a5a; }
     .header h1 {
       font-size: 13px;
       font-weight: 600;
-      color: #53d8fb;
-      letter-spacing: 0.4px;
+      color: #e2e6ee;
+      letter-spacing: 0.2px;
     }
-
-    /* Body */
-    .body { padding: 16px; }
-
-    /* Session ID card */
-    .card {
-      background: #16213e;
-      border-radius: 8px;
-      padding: 12px 14px;
-      margin-bottom: 14px;
-      border: 1px solid #0f3460;
-    }
-    .card .label {
+    .header .sub {
+      margin-left: auto;
       font-size: 10px;
-      color: #8888aa;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      margin-bottom: 6px;
-    }
-    .card .value {
-      font-size: 12px;
-      font-family: 'Consolas', monospace;
-      color: #53d8fb;
-      word-break: break-all;
+      color: #454952;
     }
 
-    /* Status badge */
+    /* ── Body ── */
+    .body { padding: 14px 16px; }
+
+    /* Session card */
+    .field {
+      margin-bottom: 12px;
+    }
+    .field .lbl {
+      font-size: 10px;
+      color: #454952;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 5px;
+    }
+    .field .val {
+      background: #17191e;
+      border: 1px solid #1e2128;
+      border-radius: 5px;
+      padding: 7px 10px;
+      font-size: 11px;
+      font-family: 'Consolas', monospace;
+      color: #8b9bb4;
+      word-break: break-all;
+      line-height: 1.5;
+    }
+
+    /* Status row */
     .status-row {
       display: flex;
       align-items: center;
       gap: 8px;
-      margin-bottom: 16px;
+      margin-bottom: 14px;
     }
+    .status-row .lbl { font-size: 11px; color: #454952; }
     .badge {
-      display: inline-block;
-      padding: 3px 10px;
-      border-radius: 20px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 9px;
+      border-radius: 4px;
       font-size: 11px;
-      font-weight: 600;
+      font-weight: 500;
     }
-    .badge.idle    { background: #2a2a4a; color: #8888aa; }
-    .badge.ready   { background: #14532d; color: #4ade80; }
-    .badge.running { background: #1e3a5f; color: #53d8fb; }
-    .badge.done    { background: #064e3b; color: #34d399; }
-    .badge.error   { background: #450a0a; color: #f87171; }
+    .badge::before {
+      content: '';
+      display: inline-block;
+      width: 5px; height: 5px;
+      border-radius: 50%;
+    }
+    .badge.idle    { background: #1a1c21; color: #555b68; }
+    .badge.idle::before { background: #333740; }
+    .badge.ready   { background: #172420; color: #4caf82; }
+    .badge.ready::before { background: #4caf82; }
+    .badge.running { background: #141c28; color: #5b8fd4; }
+    .badge.running::before { background: #5b8fd4; box-shadow: 0 0 4px #5b8fd4; }
+    .badge.error   { background: #241515; color: #e05a5a; }
+    .badge.error::before { background: #e05a5a; }
+
+    /* Mode selector */
+    .field select {
+      width: 100%;
+      background: #17191e;
+      border: 1px solid #1e2128;
+      border-radius: 5px;
+      padding: 7px 10px;
+      font-size: 12px;
+      color: #8b9bb4;
+      cursor: pointer;
+      outline: none;
+      appearance: none;
+      -webkit-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23454952' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+    }
+    .field select:focus { border-color: #2e333d; }
 
     /* Button */
-    .btn-ready {
+    .btn {
       width: 100%;
-      padding: 12px;
-      background: linear-gradient(135deg, #e94560, #c73652);
-      color: white;
-      border: none;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: 700;
+      padding: 10px;
+      background: #1e222b;
+      color: #c8cdd6;
+      border: 1px solid #2a2f3a;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
       cursor: pointer;
-      letter-spacing: 0.5px;
-      transition: opacity 0.2s, transform 0.1s;
+      letter-spacing: 0.3px;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
     }
-    .btn-ready:hover  { opacity: 0.9; transform: translateY(-1px); }
-    .btn-ready:active { transform: translateY(0); }
-    .btn-ready:disabled {
-      background: #333;
-      color: #666;
+    .btn:hover:not(:disabled) {
+      background: #252a35;
+      border-color: #3a4050;
+      color: #e2e6ee;
+    }
+    .btn:active:not(:disabled) { background: #1a1e26; }
+    .btn.active {
+      background: #172420;
+      border-color: #2c5040;
+      color: #4caf82;
+    }
+    .btn:disabled {
+      opacity: 0.4;
       cursor: not-allowed;
-      transform: none;
     }
 
     /* Log */
     .log-area {
-      margin-top: 14px;
-      background: #0d0d1a;
-      border-radius: 8px;
-      padding: 10px;
+      margin-top: 12px;
+      background: #0e0f12;
+      border: 1px solid #1e2128;
+      border-radius: 5px;
+      padding: 8px 10px;
       font-size: 11px;
       font-family: 'Consolas', monospace;
-      color: #8888aa;
-      max-height: 100px;
+      color: #454952;
+      max-height: 90px;
       overflow-y: auto;
-      line-height: 1.6;
+      line-height: 1.65;
     }
-    .log-area .ok    { color: #4ade80; }
-    .log-area .err   { color: #f87171; }
-    .log-area .info  { color: #53d8fb; }
+    .log-area::-webkit-scrollbar { width: 3px; }
+    .log-area::-webkit-scrollbar-track { background: transparent; }
+    .log-area::-webkit-scrollbar-thumb { background: #2a2f3a; border-radius: 2px; }
+    .log-area .ok   { color: #4caf82; }
+    .log-area .err  { color: #e05a5a; }
+    .log-area .info { color: #5b8fd4; }
   </style>
 </head>
 <body>
 
 <div class="header">
-  <div class="dot" id="ws-dot"></div>
-  <h1>WS Tab Controller</h1>
+  <div class="dot offline" id="ws-dot"></div>
+  <h1>Hieusoft Riot</h1>
+  <span class="sub">HieuSoft</span>
 </div>
 
 <div class="body">
 
-  <div class="card">
-    <div class="label">Session ID</div>
-    <div class="value" id="session-id">Đang tải...</div>
+  <div class="field" style="display:none">
+    <div class="lbl">Session ID</div>
+    <div class="val" id="session-id">Đang tải...</div>
+  </div>
+
+  <div class="field">
+    <div class="lbl">Chế độ</div>
+    <select id="mode-select">
+      <option value="login">Login</option>
+      <option value="changepass">Change Password</option>
+      <option value="register">Register</option>
+    </select>
   </div>
 
   <div class="status-row">
-    <span class="label" style="color:#8888aa;font-size:11px;">Trạng thái:</span>
+    <span class="lbl">Trạng thái:</span>
     <span class="badge idle" id="status-badge">Chờ</span>
   </div>
 
-  <button class="btn-ready" id="btn-ready">⚡ Sẵn sàng</button>
+  <button class="btn" id="btn-ready">Sẵn sàng</button>
 
-  <div class="log-area" id="log"></div>
+  <div class="log-area" id="log" style="display:none"></div>
 
 </div>
 

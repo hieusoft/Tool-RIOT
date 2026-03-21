@@ -1,0 +1,6 @@
+# account_changepass.txt — Danh sach tai khoan doi mat khau
+# Dinh dang: username|mat_khau_cu|mat_khau_moi (moi dong 1 tai khoan)
+# Dong bat dau bang # la ghi chu, se bi bo qua
+
+player123|OldPass@123|NewPass@456
+player456|OldPass@789|NewPass@999

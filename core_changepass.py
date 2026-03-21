@@ -1,10 +1,9 @@
 """
-core.py — Business logic, WebSocket server, shared state (Changepass)
+core_changepass.py — Business logic cho chức năng Đổi mật khẩu (không có WS server)
+WS server được quản lý tập trung bởi gui.py
 """
 
 import asyncio
-import threading
-import websockets
 import json
 import random
 import time
@@ -27,11 +26,11 @@ acct_log   = []   # [{session_id, username, old_password, new_password, status}]
 
 _req_id    = 0
 _loop      = None
-_gui       = None
 _running   = False
 _stop_flag = False
 
-ACCOUNT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "account.txt")
+BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
+ACCOUNT_FILE = os.path.join(BASE_DIR, "account_changepass.txt")
 
 # ── Signal bridge (asyncio → Qt) ──────────────────────────────────────────────
 class Bridge(QObject):
@@ -101,8 +100,7 @@ def set_status(session_id, status):
 # ── Load accounts ─────────────────────────────────────────────────────────────
 def load_accounts():
     """
-    Đọc file account.txt, mỗi dòng: username|old_password|new_password
-    Trả về list [{"username": ..., "old_password": ..., "new_password": ...}]
+    Đọc file account_changepass.txt, mỗi dòng: username|old_password|new_password
     """
     accounts = []
     if not os.path.exists(ACCOUNT_FILE):
@@ -122,7 +120,7 @@ def load_accounts():
                 })
             elif len(parts) == 2:
                 log(f"!! Dong thieu mat khau moi: {line} — bo qua")
-    log(f">> Doc duoc {len(accounts)} tai khoan tu account.txt")
+    log(f">> Doc duoc {len(accounts)} tai khoan tu account_changepass.txt")
     return accounts
 
 # ── Automation ────────────────────────────────────────────────────────────────
@@ -169,9 +167,6 @@ async def run_changepass(session_id, username, old_password, new_password):
         await sw("click", tab({"selector": '[data-testid="btn-signin-submit"]'}))
         log(f"[{sid}] Da bam Login, cho trang tai...")
 
-        # ── 5. Cho trang account hien ra (sau khi login thanh cong) ──
-        # Co the bi chay vao trang 2FA / captcha — doi selector cua trang Security
-        # Thu 2 URL: https://account.riotgames.com/ hoac trang hien tai
         await asyncio.sleep(4)
 
         # Chuyen den trang Security
@@ -182,14 +177,11 @@ async def run_changepass(session_id, username, old_password, new_password):
         change_btn_sel = 'button[data-testid="btn-change-password"], button.password-change-btn, [aria-label*="Change password"], [data-testid="change-password-button"]'
         found_change = await wfs(change_btn_sel, tab_id, max_wait=20)
 
-        # Thu selector rong hon neu khong tim thay
         if not found_change:
-            # Thu tim nut co chu "Change" tren trang
             found_change = await wfs('button', tab_id, max_wait=5)
 
         if found_change:
             await human_delay(0.5, 1.0)
-            # Bam vao nut Change Password (thu nhieu selector)
             for sel in [
                 '[data-testid="change-password-button"]',
                 '[data-testid="btn-change-password"]',
@@ -267,11 +259,9 @@ async def run_changepass(session_id, username, old_password, new_password):
                 await sw("click", tab({"selector": sel}))
                 break
 
-        # ── 11. Cho xac nhan thanh cong ──
         await asyncio.sleep(3)
         log(f"[{sid}] Doi mat khau hoan tat: {username}")
 
-        # Cap nhat status va cap nhat password moi trong log
         for e in reversed(acct_log):
             if e["session_id"] == session_id:
                 e["new_password"] = new_password
@@ -289,7 +279,7 @@ async def run_all_sessions():
 
     accounts = load_accounts()
     if not accounts:
-        log("!! Khong co tai khoan nao trong account.txt (dinh dang: username|old_pass|new_pass)")
+        log("!! Khong co tai khoan nao trong account_changepass.txt (dinh dang: username|old_pass|new_pass)")
         _running = False
         bridge.refresh_signal.emit()
         return
@@ -324,64 +314,13 @@ async def run_all_sessions():
     _running = False
     bridge.refresh_signal.emit()
 
-
-# ── WebSocket server ───────────────────────────────────────────────────────────
-async def ws_handler(websocket):
-    session_id = None
-    try:
-        async for raw in websocket:
-            try:
-                msg = json.loads(raw)
-            except Exception as e:
-                log(f"Parse error: {e}")
-                continue
-            t = msg.get("type")
-            if t == "register":
-                session_id = msg.get("sessionId")
-                if not session_id:
-                    continue
-                sessions[session_id] = {
-                    "ws": websocket, "info": msg,
-                    "pending": {}, "status": "Ket noi",
-                    "connected_at": time.time()
-                }
-                log(f"++ Session: {str(session_id)[:8]}... ({len(sessions)} total)")
-                bridge.refresh_signal.emit()
-            elif t == "result":
-                sid = msg.get("sessionId") or session_id
-                if sid and sid in sessions:
-                    rid = msg.get("requestId")
-                    p   = sessions[sid]["pending"]
-                    if rid and rid in p and not p[rid].done():
-                        p[rid].set_result(msg)
-    except websockets.exceptions.ConnectionClosed:
-        pass
-    except Exception as e:
-        log(f"Handler error: {e}")
-    finally:
-        if session_id and session_id in sessions:
-            sessions.pop(session_id, None)
-            log(f"-- Session ngat: {str(session_id)[:8]}... ({len(sessions)} con)")
-            bridge.refresh_signal.emit()
-
-async def _ws_server():
-    await websockets.serve(ws_handler, "127.0.0.1", 8000)
-    log("[WS] Server san sang: ws://127.0.0.1:8000")
-    await asyncio.Future()
-
-def start_asyncio_loop():
-    global _loop
-    _loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(_loop)
-    _loop.run_until_complete(_ws_server())
-
 # ── Public triggers (called from GUI) ─────────────────────────────────────────
-def trigger_run():
+def trigger_run(loop):
     global _running
     if _running:
         return
     _running = True
-    asyncio.run_coroutine_threadsafe(run_all_sessions(), _loop)
+    asyncio.run_coroutine_threadsafe(run_all_sessions(), loop)
 
 def trigger_stop():
     global _stop_flag, _running
