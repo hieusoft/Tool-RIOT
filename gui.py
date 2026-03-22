@@ -226,6 +226,7 @@ STATUS_COLORS = {
     "Co cookie":       ("#0a2010", "#30ff80"),
     "Khong co cookie": ("#1a2a1a", "#80c080"),
     "Lay cookie...":   ("#0e1a2a", "#7ab0ff"),
+    "Lay token...":    ("#0e1a2a", "#c0a0ff"),
     "Loi":             ("#2a1111", "#ff7070"),
     "Da dung":         ("#1a1a1a", "#888888"),
     "Dang chay":       ("#0e1a2a", "#7ab0ff"),
@@ -642,10 +643,10 @@ class RegisterTab(QWidget):
         sl.addWidget(QLabel("Danh sach tai khoan dang ky", styleSheet="color:#8da2cc;font-size:12px;background:transparent;"))
         right_v.addWidget(sec)
 
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["User Name", "Email", "Password", "Session ID", "Status"])
+        self.table = QTableWidget(0, 6)
+        self.table.setHorizontalHeaderLabels(["User Name", "Email", "Password", "Token", "Session ID", "Status"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        for col, w in [(2, 110), (3, 150)]:
+        for col, w in [(2, 110), (3, 180), (4, 150), (5, 100)]:
             self.table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
             self.table.setColumnWidth(col, w)
         self.table.verticalHeader().setVisible(False)
@@ -699,12 +700,15 @@ class RegisterTab(QWidget):
             status = e.get("status", "Cho...")
             bg_hex, fg_hex = STATUS_COLORS.get(status, ("#0f131b", "#8da0c0"))
             bg, fg = QColor(bg_hex), QColor(fg_hex)
+            raw_token   = e.get("token", "")
+            short_token = (raw_token[:30] + "...") if len(raw_token) > 30 else raw_token
             for col, val, align in [
                 (0, e.get("username",""), None),
                 (1, e.get("email",""), None),
                 (2, e.get("password",""), CENTER),
-                (3, str(e["session_id"])[:22] + "...", None),
-                (4, status, CENTER),
+                (3, short_token, None),
+                (4, str(e["session_id"])[:22] + "...", None),
+                (5, status, CENTER),
             ]:
                 self.table.setItem(row, col, make_cell(val, bg, fg, align or (Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)))
 
@@ -720,7 +724,7 @@ class RegisterTab(QWidget):
             return
         path, _ = QFileDialog.getSaveFileName(self, "Luu file", "accounts.txt", "Text Files (*.txt)")
         if not path: return
-        lines = [f"{e['username']}|{e['email']}|{e['password']}" for e in core_register.acct_log]
+        lines = [f"{e['username']}|{e['email']}|{e['password']}|{e.get('token','')}" for e in core_register.acct_log]
         with open(path, "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
         QMessageBox.information(self, "Thanh cong", f"Da xuat {len(lines)} tai khoan ra:\n{path}")

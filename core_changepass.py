@@ -100,7 +100,9 @@ def set_status(session_id, status):
 # ── Load accounts ─────────────────────────────────────────────────────────────
 def load_accounts():
     """
-    Đọc file account_changepass.txt, mỗi dòng: username|old_password|new_password
+    Đọc file account_changepass.txt
+    Format 2 trường: username|new_password (old_password = empty)
+    Format 3 trường: username|old_password|new_password
     """
     accounts = []
     if not os.path.exists(ACCOUNT_FILE):
@@ -119,7 +121,14 @@ def load_accounts():
                     "new_password": parts[2].strip(),
                 })
             elif len(parts) == 2:
-                log(f"!! Dong thieu mat khau moi: {line} — bo qua")
+                # Format: username|new_password (login bằng new_password)
+                accounts.append({
+                    "username":     parts[0].strip(),
+                    "old_password": parts[1].strip(),  # dùng chính password này để login
+                    "new_password": parts[1].strip(),  # và đổi thành password mới
+                })
+            else:
+                log(f"!! Dong sai dinh dang: {line} — bo qua")
     log(f">> Doc duoc {len(accounts)} tai khoan tu account_changepass.txt")
     return accounts
 
@@ -136,7 +145,7 @@ async def run_changepass(session_id, username, old_password, new_password):
 
     try:
         # ── 1. Mo trang login Riot ──
-        res    = await sw("open_url", {"url": "https://auth.riotgames.com/login#access_token", "newTab": True})
+        res    = await sw("open_url", {"url": "https://account.riotgames.com", "newTab": True})
         tab_id = (res or {}).get("result", {}).get("tabId")
 
         def tab(x={}):
@@ -146,9 +155,9 @@ async def run_changepass(session_id, username, old_password, new_password):
             return d
 
         # ── 2. Nhap username ──
-        if await wfs('[data-testid="username"]', tab_id, max_wait=25):
+        if await wfs('[data-testid="input-username"]', tab_id, max_wait=25):
             await human_delay(0.5, 1.0)
-            await sw("type_text", tab({"selector": '[data-testid="username"]', "value": username}))
+            await sw("type_text", tab({"selector": '[data-testid="input-username"]', "value": username}))
         else:
             log(f"[{sid}] !! Khong thay o username")
             set_status(session_id, "Loi")
@@ -157,9 +166,9 @@ async def run_changepass(session_id, username, old_password, new_password):
         await human_delay(0.5, 1.0)
 
         # ── 3. Nhap password ──
-        if await wfs('[data-testid="password"]', tab_id, max_wait=10):
+        if await wfs('[data-testid="input-password"]', tab_id, max_wait=10):
             await human_delay(0.3, 0.7)
-            await sw("type_text", tab({"selector": '[data-testid="password"]', "value": old_password}))
+            await sw("type_text", tab({"selector": '[data-testid="input-password"]', "value": old_password}))
 
         await human_delay(0.6, 1.2)
 
@@ -167,97 +176,68 @@ async def run_changepass(session_id, username, old_password, new_password):
         await sw("click", tab({"selector": '[data-testid="btn-signin-submit"]'}))
         log(f"[{sid}] Da bam Login, cho trang tai...")
 
-        await asyncio.sleep(4)
+        # ── 4b. Kiem tra error message sau submit ──
+        await asyncio.sleep(2)
+        err_res = await send_and_wait(session_id, "check_element",
+                                      tab({"selector": '[data-testid="error-message"]'}), timeout=5)
+        if (err_res or {}).get("result", {}).get("found"):
+            log(f"[{sid}] !! Login that bai — sai username/password hoac tai khoan bi khoa")
+            set_status(session_id, "Login loi")
+            return
 
-        # Chuyen den trang Security
-        await sw("open_url", tab({"url": CHANGE_PASS_URL}))
+        # Chờ trang account load sau khi login (tự redirect về account.riotgames.com)
+        await asyncio.sleep(6)
         log(f"[{sid}] Mo trang Security...")
 
-        # ── 6. Cho nut "Change Password" hien ra ──
-        change_btn_sel = 'button[data-testid="btn-change-password"], button.password-change-btn, [aria-label*="Change password"], [data-testid="change-password-button"]'
-        found_change = await wfs(change_btn_sel, tab_id, max_wait=20)
-
-        if not found_change:
-            found_change = await wfs('button', tab_id, max_wait=5)
-
-        if found_change:
-            await human_delay(0.5, 1.0)
-            for sel in [
-                '[data-testid="change-password-button"]',
-                '[data-testid="btn-change-password"]',
-                'button[class*="password"]',
-            ]:
-                res2 = await send_and_wait(session_id, "check_element", tab({"selector": sel}), timeout=4)
-                if (res2 or {}).get("result", {}).get("found"):
-                    await sw("click", tab({"selector": sel}))
-                    break
-
-        # ── 7. Dien Current Password ──
-        cur_pass_sel_list = [
-            '[data-testid="current-password"]',
-            'input[name="currentPassword"]',
-            'input[placeholder*="current"]',
-            'input[autocomplete="current-password"]',
-        ]
-        found_cur = False
-        for sel in cur_pass_sel_list:
-            if await wfs(sel, tab_id, max_wait=8):
-                await human_delay(0.3, 0.7)
-                await sw("type_text", tab({"selector": sel, "value": old_password}))
-                found_cur = True
-                break
-
-        if not found_cur:
+        # ── 6. Scroll đến form đổi mật khẩu và điền ──
+        cur_pass_sel = '[data-testid="password-card__currentPassword"]'
+        if not await wfs(cur_pass_sel, tab_id, max_wait=20):
             log(f"[{sid}] !! Khong thay truong 'Current Password'")
             set_status(session_id, "Loi")
             return
 
-        # ── 8. Dien New Password ──
-        new_pass_sel_list = [
-            '[data-testid="new-password"]',
-            'input[name="newPassword"]',
-            'input[placeholder*="new"]',
-            'input[autocomplete="new-password"]',
-        ]
-        found_new = False
-        for sel in new_pass_sel_list:
-            if await wfs(sel, tab_id, max_wait=8):
-                await human_delay(0.3, 0.6)
-                await sw("type_text", tab({"selector": sel, "value": new_password}))
-                found_new = True
-                break
+        # Scroll đến element trước khi nhập
+        await send_and_wait(session_id, "execute_script",
+                            tab({"script": f"document.querySelector('{cur_pass_sel}')?.scrollIntoView({{behavior:'smooth',block:'center'}})"}),
+                            timeout=5)
+        await human_delay(0.5, 1.0)
 
-        if not found_new:
+        # ── 7. Dien Current Password ──
+        await sw("type_text", tab({"selector": cur_pass_sel, "value": old_password}))
+
+        # ── 8. Dien New Password ──
+        new_pass_sel = '[data-testid="password-card__newPassword"]'
+        if await wfs(new_pass_sel, tab_id, max_wait=8):
+            await human_delay(0.3, 0.6)
+            await sw("type_text", tab({"selector": new_pass_sel, "value": new_password}))
+        else:
             log(f"[{sid}] !! Khong thay truong 'New Password'")
             set_status(session_id, "Loi")
             return
 
         # ── 9. Confirm New Password ──
-        confirm_sel_list = [
-            '[data-testid="confirm-password"]',
-            'input[name="confirmPassword"]',
-            'input[placeholder*="confirm"]',
-        ]
-        for sel in confirm_sel_list:
-            if await wfs(sel, tab_id, max_wait=8):
-                await human_delay(0.3, 0.6)
-                await sw("type_text", tab({"selector": sel, "value": new_password}))
-                break
+        confirm_sel = '[data-testid="password-card__confirmNewPassword"]'
+        if await wfs(confirm_sel, tab_id, max_wait=8):
+            await human_delay(0.3, 0.6)
+            await sw("type_text", tab({"selector": confirm_sel, "value": new_password}))
+
 
         await human_delay(0.7, 1.4)
 
         # ── 10. Bam Save / Submit ──
-        submit_sel_list = [
-            '[data-testid="btn-save-password"]',
-            '[data-testid="submit-button"]',
-            'button[type="submit"]',
-        ]
-        for sel in submit_sel_list:
-            res3 = await send_and_wait(session_id, "check_element", tab({"selector": sel}), timeout=4)
-            if (res3 or {}).get("result", {}).get("found"):
-                await human_delay(0.4, 0.8)
-                await sw("click", tab({"selector": sel}))
-                break
+        submit_sel         = '[data-testid="password-card__submit-btn"]'
+        submit_enabled_sel = '[data-testid="password-card__submit-btn"]:not([disabled])'
+        log(f"[{sid}] Cho nut Save duoc active...")
+        # Chờ button bỏ disabled (tối đa 8s)
+        if await wfs(submit_enabled_sel, tab_id, max_wait=8):
+            await human_delay(0.4, 0.8)
+            await sw("click", tab({"selector": submit_sel}))
+            log(f"[{sid}] Da bam Save Changes!")
+        else:
+            log(f"[{sid}] !! Nut Save van disabled — co the mat khau khong hop le")
+            set_status(session_id, "Loi")
+            return
+
 
         await asyncio.sleep(3)
         log(f"[{sid}] Doi mat khau hoan tat: {username}")
@@ -268,9 +248,47 @@ async def run_changepass(session_id, username, old_password, new_password):
                 break
         set_status(session_id, "Hoan thanh")
 
+        # ── Logout + dọn dẹp tab ──
+        LOGOUT_URL = "https://login.riotgames.com/end-session-redirect?redirect_uri=https%3A%2F%2Fauth.riotgames.com%2Flogout"
+        log(f"[{sid}] Logout va don dep tab...")
+        await sw("open_url", tab({"url": LOGOUT_URL}))
+        await sw("clear_cookies", {})
+        await asyncio.sleep(2)
+
+        # Đóng tất cả tab trừ tab đầu tiên (giữ browser khỏi đóng)
+        all_tabs_res = await send_and_wait(session_id, "list_tabs", {}, timeout=5)
+        all_tabs = ((all_tabs_res or {}).get("result", [])) or []
+        for t in all_tabs[1:]:
+            tid = t.get("id") if isinstance(t, dict) else None
+            if tid:
+                await send_and_wait(session_id, "close_tab", {"tabId": tid}, timeout=5)
+        await asyncio.sleep(1)
+        log(f"[{sid}] San sang cho account tiep theo...")
+
     except Exception as e:
         set_status(session_id, "Loi")
         log(f"[{sid}] Error: {e}")
+
+    finally:
+        # Luôn logout + dọn tab dù thành công hay lỗi
+        try:
+            LOGOUT_URL = "https://login.riotgames.com/end-session-redirect?redirect_uri=https%3A%2F%2Fauth.riotgames.com%2Flogout"
+            log(f"[{sid}] [finally] Logout va dong tab...")
+            await send_and_wait(session_id, "open_url",
+                                {"url": LOGOUT_URL, "newTab": False}, timeout=10)
+            await send_and_wait(session_id, "clear_cookies", {}, timeout=5)
+            await asyncio.sleep(2)
+            # Đóng tất cả tab trừ tab[0]
+            tabs_r = await send_and_wait(session_id, "list_tabs", {}, timeout=5)
+            tabs   = ((tabs_r or {}).get("result", [])) or []
+            for t in tabs[1:]:
+                tid = t.get("id") if isinstance(t, dict) else None
+                if tid:
+                    await send_and_wait(session_id, "close_tab", {"tabId": tid}, timeout=5)
+            log(f"[{sid}] [finally] Tab sach — san sang account tiep theo")
+        except Exception as fe:
+            log(f"[{sid}] [finally] Loi don dep: {fe}")
+
 
 
 async def run_all_sessions():
@@ -293,26 +311,38 @@ async def run_all_sessions():
 
     log(f">> Bat dau {len(session_ids)} session(s) voi {len(accounts)} tai khoan...")
 
-    tasks = []
-    for i, (sid, acct) in enumerate(zip(session_ids, accounts)):
-        entry = {
-            "session_id":   sid,
-            "username":     acct["username"],
-            "old_password": acct["old_password"],
-            "new_password": acct["new_password"],
-            "status":       "Cho...",
-        }
-        acct_log.append(entry)
-        log(f"  >> [{str(sid)[:8]}] {acct['username']}")
-        tasks.append(asyncio.create_task(
-            run_changepass(sid, acct["username"], acct["old_password"], acct["new_password"])
-        ))
+    # Đưa tất cả account vào queue — mỗi session worker tự pick
+    queue: asyncio.Queue = asyncio.Queue()
+    for acct in accounts:
+        await queue.put(acct)
 
+    async def session_worker(sid):
+        """Mỗi session lấy account từ queue cho đến khi hết."""
+        while not _stop_flag:
+            try:
+                acct = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break  # Hết account
+            entry = {
+                "session_id":   sid,
+                "username":     acct["username"],
+                "old_password": acct["old_password"],
+                "new_password": acct["new_password"],
+                "status":       "Cho...",
+            }
+            acct_log.append(entry)
+            bridge.refresh_signal.emit()
+            log(f"  >> [{str(sid)[:8]}] {acct['username']}")
+            await run_changepass(sid, acct["username"], acct["old_password"], acct["new_password"])
+            queue.task_done()
+
+    tasks = [asyncio.create_task(session_worker(sid)) for sid in session_ids]
     bridge.refresh_signal.emit()
     await asyncio.gather(*tasks, return_exceptions=True)
     log(">> Tat ca sessions hoan thanh!")
     _running = False
     bridge.refresh_signal.emit()
+
 
 # ── Public triggers (called from GUI) ─────────────────────────────────────────
 def trigger_run(loop):
