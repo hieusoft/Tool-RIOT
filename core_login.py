@@ -9,6 +9,8 @@ import random
 import time
 import sys
 import os
+import urllib.parse
+import requests
 from datetime import datetime
 
 from PyQt6.QtCore import QObject, pyqtSignal
@@ -120,7 +122,7 @@ def load_accounts():
     return accounts
 
 # ── Automation ────────────────────────────────────────────────────────────────
-LOGIN_URL = "https://support.riotgames.com/hc/en-us"
+LOGIN_URL = "https://auth.riotgames.com/authorize?redirect_uri=http://localhost/redirect&client_id=riot-client&response_type=token%20id_token&nonce=1&scope=openid%20link%20ban%20lol_region%20account"
 
 async def run_login(session_id, username, password):
     sid = str(session_id)[:8]
@@ -140,17 +142,6 @@ async def run_login(session_id, username, password):
             if tab_id:
                 d["tabId"] = tab_id
             return d
-
-        # ── 2. Bam nut "Sign in" tren trang Support ──
-        signin_btn_sel = '[data-telemetry-label="masthead-login-button"]'
-        if await wfs(signin_btn_sel, tab_id, max_wait=20):
-            await human_delay(0.5, 1.0)
-            await sw("click", tab({"selector": signin_btn_sel}))
-            log(f"[{sid}] Da bam Sign in, cho form login hien ra...")
-        else:
-            log(f"[{sid}] !! Khong thay nut Sign in")
-            set_status(session_id, "Loi", "Khong thay nut Sign in")
-            return
 
         # ── 3. Cho o Username hien ra ──
         username_sel = '[data-testid="input-username"]'
@@ -176,25 +167,33 @@ async def run_login(session_id, username, password):
         log(f"[{sid}] Da bam Login, cho phan hoi...")
 
         # ── 6. Cho hCaptcha neu xuat hien ──
-        captcha_sel = 'iframe[src*="hcaptcha.com"]'
+        # Chi check captcha VISIBLE (checkbox frame), bo qua invisible captcha (tu solve)
+        # Frame checkbox co src chua "frame=checkbox" va KHONG phai checkbox-invisible
         log(f"[{sid}] Kiem tra hCaptcha...")
-        while True:
+        captcha_elapsed = 0
+        while captcha_elapsed < 60:
             res_cap = await send_and_wait(session_id, "check_element",
-                                          tab({"selector": captcha_sel}), timeout=5)
-            found_cap = (res_cap or {}).get("result", {}).get("found", False)
+                                          tab({"selector": 'iframe[src*="hcaptcha.com"][src*="frame=checkbox"]:not([src*="invisible"])'}), timeout=5)
+            found_cap = (res_cap or {}).get("result", {})
+            if isinstance(found_cap, dict):
+                found_cap = found_cap.get("found", False)
+            else:
+                found_cap = bool(found_cap)
             if not found_cap:
                 break
-            log(f"[{sid}] hCaptcha dang hien — cho 5s...")
+            log(f"[{sid}] hCaptcha visible dang hien — cho 5s...")
             await asyncio.sleep(5)
-        log(f"[{sid}] hCaptcha da bien mat, tiep tuc...")
+            captcha_elapsed += 5
+        if captcha_elapsed >= 60:
+            log(f"[{sid}] Captcha timeout 60s, tiep tuc...")
+        else:
+            log(f"[{sid}] Khong co captcha visible, tiep tuc...")
 
         # ── 7. Kiem tra ket qua ──
-        await asyncio.sleep(3)
+        await asyncio.sleep(7)
 
         error_sels = [
             '[data-testid="error-message"]',
-            '[class*="error"]',
-            '[aria-live="polite"]',
         ]
         for err_sel in error_sels:
             res_err = await send_and_wait(session_id, "check_element",
@@ -204,101 +203,115 @@ async def run_login(session_id, username, password):
                 set_status(session_id, "Loi", "Sai mat khau")
                 return
 
-        mfa_sels = [
-            '[data-testid="mfa-code-input"]',
-            'input[placeholder*="code"]',
-            '[data-testid="multifactor"]',
-        ]
-        for mfa_sel in mfa_sels:
-            res_mfa = await send_and_wait(session_id, "check_element",
-                                           tab({"selector": mfa_sel}), timeout=4)
-            if (res_mfa or {}).get("result", {}).get("found"):
-                log(f"[{sid}] -- Tai khoan co bat 2FA (yeu cau nhap ma)")
-                set_status(session_id, "Can 2FA", "Bat 2FA")
-                return
+        # mfa_sels = [
+        #     '[data-testid="mfa-code-input"]',
+        #     'input[placeholder*="code"]',
+        #     '[data-testid="multifactor"]',
+        # ]
+        # for mfa_sel in mfa_sels:
+        #     res_mfa = await send_and_wait(session_id, "check_element",
+        #                                    tab({"selector": mfa_sel}), timeout=4)
+        #     if (res_mfa or {}).get("result", {}).get("found"):
+        #         log(f"[{sid}] -- Tai khoan co bat 2FA (yeu cau nhap ma)")
+        #         set_status(session_id, "Can 2FA", "Bat 2FA")
+        #         return
 
-        success_sels = [
-            '[data-testid="username-display"]',
-            'a[href*="logout"]',
-            '[data-testid="account-alias"]',
-        ]
-        logged_in = False
-        for succ_sel in success_sels:
-            res_ok = await send_and_wait(session_id, "check_element",
-                                          tab({"selector": succ_sel}), timeout=5)
-            if (res_ok or {}).get("result", {}).get("found"):
-                logged_in = True
-                break
+        logged_in = True
 
         await asyncio.sleep(5)
         if logged_in:
             log(f"[{sid}] ++ Dang nhap thanh cong: {username}")
-            set_status(session_id, "Lay cookie...", "Dang nhap OK")
+            set_status(session_id, "Lay token...", "Dang nhap OK")
+            access_token = ""
+            token_tab_id = None
+            for i in range(40):   # toi da ~20s
+                await asyncio.sleep(0.5)
+                if _stop_flag:
+                    break
+                tabs_res = await send_and_wait(session_id, "list_tabs", {}, timeout=5)
+                tabs = []
+                if tabs_res:
+                    r = tabs_res.get("result", [])
+                    tabs = r if isinstance(r, list) else []
+                if i % 6 == 0:
+                    log(f"[{sid}] [DBG] so tab={len(tabs)}")
+                for t in tabs:
+                    url = t.get("url", "") if isinstance(t, dict) else ""
+                    if "access_token=" in url:
+                        # Token co the nam trong fragment (#) hoac query string (?)
+                        frag   = url.split("#", 1)[-1] if "#" in url else url.split("?", 1)[-1]
+                        params = dict(urllib.parse.parse_qsl(frag))
+                        tok    = params.get("access_token", "")
+                        if tok:
+                            access_token = tok
+                            token_tab_id = t.get("id") or t.get("tabId")
+                            break
+                if access_token:
+                    break
 
-            GEO_URL = "https://sspd.playersupport.riotgames.com/geo_info/ip"
-            log(f"[{sid}] Mo trang lay cookie: {GEO_URL}")
-            await sw("open_url", tab({"url": GEO_URL}))
-            await asyncio.sleep(2)
+            # Dong tab chua token (localhost/redirect) sau khi lay xong
+            if token_tab_id:
+                await send_and_wait(session_id, "close_tab", {"tabId": token_tab_id}, timeout=5)
 
-            res_cookie = await send_and_wait(session_id, "get_cookies", tab({}), timeout=10)
-            cookies = (res_cookie or {}).get("result", {}).get("cookies", [])
-
-            if cookies:
-                cookie_str = "; ".join(f"{c['name']}={c['value']}" for c in cookies)
-                log(f"[{sid}] Cookie ({len(cookies)} muc): {cookie_str[:120]}...")
+            if access_token:
+                log(f"[{sid}] ++ Token: {access_token[:50]}...")
                 for e in reversed(acct_log):
                     if e["session_id"] == session_id:
-                        e["cookies"] = cookie_str
+                        e["token"] = access_token
                         break
-                cookie_file = os.path.join(BASE_DIR, "cookies.txt")
-                with open(cookie_file, "a", encoding="utf-8") as f:
-                    f.write(f"{username}|{password}|{cookie_str}\n")
-                log(f"[{sid}] Da ghi cookie vao cookies.txt")
+                token_file = os.path.join(BASE_DIR, "token.txt")
+                with open(token_file, "a", encoding="utf-8") as f:
+                    f.write(f"{username}|{password}|{access_token}\n")
+                log(f"[{sid}] Da ghi token vao token.txt")
 
-                WORKFLOW_URL = "https://sspd.playersupport.riotgames.com/arbiter/edge/start_workflow"
-                WORKFLOW_BODY = json.dumps({
-                    "locale":  "en_US",
-                    "host":    "https://sspd.playersupport.riotgames.com",
-                    "name":    "cu2_hub_pb.m3",
-                    "channel": "WEB"
-                })
-                js_code = f"""
-(async () => {{
-  try {{
-    const res = await fetch("{WORKFLOW_URL}", {{
-      method: "POST",
-      headers: {{ "Content-Type": "application/json", "Accept": "application/json" }},
-      body: {repr(WORKFLOW_BODY)},
-      credentials: "include"
-    }});
-    const text = await res.text();
-    return {{ status: res.status, body: text.substring(0, 500) }};
-  }} catch(err) {{
-    return {{ status: -1, body: err.toString() }};
-  }}
-}})()
-"""
-                res_wf = await send_and_wait(session_id, "execute_script",
-                                              tab({"script": js_code}), timeout=20)
-                wf_result = (res_wf or {}).get("result", {})
-                wf_status  = wf_result.get("status", "?")
-                wf_body    = wf_result.get("body", "")
-                log(f"[{sid}] Workflow response HTTP {wf_status}: {wf_body[:200]}")
+                # ── Lay thong tin user tu /userinfo bang requests Python ──
+                log(f"[{sid}] Dang lay userinfo (requests)...")
+
+                def _fetch_userinfo():
+                    try:
+                        r = requests.post(
+                            "https://auth.riotgames.com/userinfo",
+                            headers={
+                                "Authorization": f"Bearer {access_token}",
+                                "Content-Type": "application/json",
+                            },
+                            timeout=10,
+                        )
+                        return r.status_code, r.text
+                    except Exception as ex:
+                        return -1, str(ex)
+
+                loop = asyncio.get_event_loop()
+                ui_status, ui_body = await loop.run_in_executor(None, _fetch_userinfo)
+                log(f"[{sid}] Userinfo HTTP {ui_status}: {ui_body[:300]}")
+
+                ui_data = {}
+                try:
+                    if ui_status == 200:
+                        ui_data = json.loads(ui_body)
+                except Exception:
+                    pass
 
                 for e in reversed(acct_log):
                     if e["session_id"] == session_id:
-                        e["workflow_status"] = wf_status
-                        e["workflow_body"]   = wf_body
+                        e["userinfo"]     = ui_data
+                        e["userinfo_raw"] = ui_body
                         break
-                wf_file = os.path.join(BASE_DIR, "workflow_results.txt")
-                with open(wf_file, "a", encoding="utf-8") as f:
-                    f.write(f"{username}|{password}|HTTP{wf_status}|{wf_body}\n")
-                log(f"[{sid}] Da ghi ket qua workflow vao workflow_results.txt")
 
-                set_status(session_id, "Hoan thanh", "Co cookie")
+                userinfo_file = os.path.join(BASE_DIR, "userinfo.txt")
+                with open(userinfo_file, "a", encoding="utf-8") as f:
+                    f.write(f"{username}|{password}|{access_token}|{ui_body}\n")
+                log(f"[{sid}] Da ghi userinfo vao userinfo.txt")
+
+                bridge.refresh_signal.emit()
+                set_status(session_id, "Hoan thanh", "Co token")
             else:
-                log(f"[{sid}] ?? Khong lay duoc cookie")
-                set_status(session_id, "Hoan thanh", "Khong co cookie")
+                log(f"[{sid}] ?? Khong lay duoc token")
+                for e in reversed(acct_log):
+                    if e["session_id"] == session_id:
+                        e["token"] = ""
+                        break
+                set_status(session_id, "Hoan thanh", "Khong co token")
         else:
             log(f"[{sid}] ?? Khong ro ket qua — kiem tra thu cong: {username}")
             set_status(session_id, "Can kiem tra", "")
@@ -306,6 +319,62 @@ async def run_login(session_id, username, password):
     except Exception as e:
         set_status(session_id, "Loi", str(e))
         log(f"[{sid}] Error: {e}")
+
+
+async def _logout_session(session_id):
+    """Navigate đến Riot logout URL để hủy session, rồi đóng tab thừa."""
+    sid = str(session_id)[:8]
+    sw = lambda a, d, **kw: send_and_wait(session_id, a, d, **kw)
+    try:
+        # Đóng hết tab thừa (trừ tab đầu tiên)
+        tabs_res = await sw("list_tabs", {}, timeout=5)
+        tabs = []
+        if tabs_res:
+            r = tabs_res.get("result", [])
+            tabs = r if isinstance(r, list) else []
+        for t in tabs[1:]:
+            tid = t.get("id") or t.get("tabId")
+            if tid:
+                await sw("close_tab", {"tabId": tid}, timeout=4)
+        # Navigate đến trang logout chính thức của Riot
+        log(f"[{sid}] Dang logout Riot...")
+        await sw("open_url", {"url": "https://auth.riotgames.com/logout"}, timeout=10)
+        await asyncio.sleep(3)   # chờ server hủy session + redirect xong
+        log(f"[{sid}] Logout xong, san sang account tiep theo")
+    except Exception as ex:
+        log(f"[{sid}] Warning logout: {ex}")
+
+
+async def _session_worker(session_id, queue):
+    """Mỗi session lấy account từ queue → login → logout → lặp lại."""
+    sid = str(session_id)[:8]
+    first = True
+    while not _stop_flag:
+        try:
+            acct = queue.get_nowait()
+        except asyncio.QueueEmpty:
+            break
+
+        if not first:
+            # Logout browser sau account trước
+            await _logout_session(session_id)
+            await asyncio.sleep(1)
+        first = False
+
+        log(f"[{sid}] Bat dau account: {acct['username']}")
+        entry = {
+            "session_id": session_id,
+            "username":   acct["username"],
+            "password":   acct["password"],
+            "status":     "Cho...",
+        }
+        acct_log.append(entry)
+        bridge.refresh_signal.emit()
+
+        await run_login(session_id, acct["username"], acct["password"])
+        queue.task_done()
+
+    log(f"[{sid}] Worker ket thuc")
 
 
 async def run_all_sessions():
@@ -326,25 +395,18 @@ async def run_all_sessions():
         bridge.refresh_signal.emit()
         return
 
-    log(f">> Bat dau {len(session_ids)} session(s) voi {len(accounts)} tai khoan...")
+    # Nạp hết accounts vào queue dùng chung
+    queue = asyncio.Queue()
+    for acct in accounts:
+        await queue.put(acct)
 
-    tasks = []
-    for sid, acct in zip(session_ids, accounts):
-        entry = {
-            "session_id": sid,
-            "username":   acct["username"],
-            "password":   acct["password"],
-            "status":     "Cho...",
-            "note":       "",
-        }
-        acct_log.append(entry)
-        log(f"  >> [{str(sid)[:8]}] {acct['username']}")
-        tasks.append(asyncio.create_task(
-            run_login(sid, acct["username"], acct["password"])
-        ))
-
+    log(f">> {len(session_ids)} session(s) | {len(accounts)} accounts | Queue mode")
     bridge.refresh_signal.emit()
+
+    # Mỗi session chạy worker vòng lặp lấy từ queue
+    tasks = [asyncio.create_task(_session_worker(sid, queue)) for sid in session_ids]
     await asyncio.gather(*tasks, return_exceptions=True)
+
     log(">> Tat ca sessions hoan thanh!")
     _running = False
     bridge.refresh_signal.emit()

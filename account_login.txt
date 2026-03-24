@@ -1,6 +1,3 @@
-# account_login.txt — Danh sach tai khoan dang nhap
-# Dinh dang: username|password (moi dong 1 tai khoan)
-# Dong bat dau bang # la ghi chu, se bi bo qua
-
-player123|Pass@123
-player456|Pass@456
+grace3414|Auto@451147
+Derekop000|TwDz9acZ9
+williamberry94|Auto@1940132

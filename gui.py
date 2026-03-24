@@ -100,7 +100,6 @@ QTableWidget {
 }
 QTableWidget::item {
     padding: 6px 10px;
-    color: #d0defa;
     border: none;
 }
 QTableWidget::item:selected { background: #1a2848; color: #ffffff; }
@@ -324,10 +323,10 @@ class LoginTab(QWidget):
         sl.addWidget(QLabel("Ket qua dang nhap", styleSheet="color:#8da2cc;font-size:12px;background:transparent;"))
         right_v.addWidget(sec)
 
-        self.table = QTableWidget(0, 6)
-        self.table.setHorizontalHeaderLabels(["Username", "Password", "Session ID", "Status", "Ghi chu", "Cookie"])
+        self.table = QTableWidget(0, 5)
+        self.table.setHorizontalHeaderLabels(["Username", "Password", "Session ID", "Status", "Status Account"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        for col, w in [(2, 150), (3, 110), (4, 100)]:
+        for col, w in [(2, 150), (3, 110), (4, 160)]:
             self.table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
             self.table.setColumnWidth(col, w)
         self.table.verticalHeader().setVisible(False)
@@ -375,23 +374,47 @@ class LoginTab(QWidget):
             self.sess_list.addItem(item)
         self.count_badge.setText(f"{len(core_login.sessions)} ket noi")
 
+    def _get_ban_status(self, e):
+        """Trả về (text, bg_hex, fg_hex) dựa trên ban restrictions trong userinfo."""
+        # Chưa fetch userinfo → hiện “-”
+        if "userinfo" not in e:
+            return "-", "#111620", "#4a6080"
+        ui = e.get("userinfo", {})
+    
+        # userinfo là dict rỗng → fetch lỗi hoặc không có data
+        if not isinstance(ui, dict) or not ui:
+            return "No data", "#1a1a20", "#6060a0"
+        restrictions = ui.get("ban", {}).get("restrictions", None)
+        print(f"restrictions: {restrictions}")
+        # restrictions là None hoặc list rỗng → sạch
+        if not restrictions:
+            return "OK", "#0a1a0f", "#4ae98c"
+        # Kiểm tra PERMANENT_BAN do script
+        for r in restrictions:
+            if r.get("type") == "PERMANENT_BAN":
+                reason = r.get("reason", "")
+                if "SCRIPTING" in reason:
+                    return "PERM BAN (script)", "#2a0a0a", "#ff4444"
+                return "PERMANENT BAN", "#2a1a0a", "#ff8844"
+        # Có ban nhưng không phải PERMANENT
+        return "BANNED", "#1a1a0a", "#ffcc44"
+
     def _refresh_table(self):
         self.table.setRowCount(len(core_login.acct_log))
         for row, e in enumerate(core_login.acct_log):
             status = e.get("status", "Cho...")
             bg_hex, fg_hex = STATUS_COLORS.get(status, ("#0f131b", "#8da0c0"))
             bg, fg = QColor(bg_hex), QColor(fg_hex)
-            raw_cookie = e.get("cookies", "")
-            short_cookie = (raw_cookie[:60] + "...") if len(raw_cookie) > 60 else raw_cookie
             for col, val, align in [
                 (0, e.get("username",""), None),
                 (1, e.get("password",""), None),
                 (2, str(e["session_id"])[:22] + "...", None),
                 (3, status, CENTER),
-                (4, e.get("note",""), CENTER),
-                (5, short_cookie, None),
             ]:
                 self.table.setItem(row, col, make_cell(val, bg, fg, align or (Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)))
+            # ── Cột Status Account (ban check) ──
+            ban_text, ban_bg, ban_fg = self._get_ban_status(e)
+            self.table.setItem(row, 4, make_cell(ban_text, QColor(ban_bg), QColor(ban_fg), CENTER))
 
     def _refresh_stats(self):
         log = core_login.acct_log

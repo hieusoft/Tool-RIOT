@@ -175,7 +175,25 @@ async def run_changepass(session_id, username, old_password, new_password):
         # ── 4. Bam Login ──
         await sw("click", tab({"selector": '[data-testid="btn-signin-submit"]'}))
         log(f"[{sid}] Da bam Login, cho trang tai...")
-
+        log(f"[{sid}] Kiem tra hCaptcha...")
+        captcha_elapsed = 0
+        while captcha_elapsed < 60:
+            res_cap = await send_and_wait(session_id, "check_element",
+                                          tab({"selector": 'iframe[src*="hcaptcha.com"][src*="frame=checkbox"]:not([src*="invisible"])'}), timeout=5)
+            found_cap = (res_cap or {}).get("result", {})
+            if isinstance(found_cap, dict):
+                found_cap = found_cap.get("found", False)
+            else:
+                found_cap = bool(found_cap)
+            if not found_cap:
+                break
+            log(f"[{sid}] hCaptcha visible dang hien — cho 5s...")
+            await asyncio.sleep(5)
+            captcha_elapsed += 5
+        if captcha_elapsed >= 60:
+            log(f"[{sid}] Captcha timeout 60s, tiep tuc...")
+        else:
+            log(f"[{sid}] Khong co captcha visible, tiep tuc...")
         # ── 4b. Kiem tra error message sau submit ──
         await asyncio.sleep(2)
         err_res = await send_and_wait(session_id, "check_element",

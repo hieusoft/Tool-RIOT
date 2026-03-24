@@ -187,15 +187,24 @@ async def run_signup(session_id, email, username, password):
 
                         captcha_sel = 'iframe[src*="hcaptcha.com"]'
                         log(f"[{sid}] Kiem tra hCaptcha...")
-                        while True:
-                            res   = await send_and_wait(session_id, "check_element",
-                                                        {"selector": captcha_sel}, timeout=5)
-                            found = (res or {}).get("result", {}).get("found", False)
-                            if not found:
+                        captcha_elapsed = 0
+                        while captcha_elapsed < 60:
+                            res_cap = await send_and_wait(session_id, "check_element",
+                                                        tab({"selector": 'iframe[src*="hcaptcha.com"][src*="frame=checkbox"]:not([src*="invisible"])'}), timeout=5)
+                            found_cap = (res_cap or {}).get("result", {})
+                            if isinstance(found_cap, dict):
+                                found_cap = found_cap.get("found", False)
+                            else:
+                                found_cap = bool(found_cap)
+                            if not found_cap:
                                 break
-                            log(f"[{sid}] hCaptcha dang hien — cho 5s...")
+                            log(f"[{sid}] hCaptcha visible dang hien — cho 5s...")
                             await asyncio.sleep(5)
-                        log(f"[{sid}] hCaptcha da bien mat, tiep tuc...")
+                            captcha_elapsed += 5
+                        if captcha_elapsed >= 60:
+                            log(f"[{sid}] Captcha timeout 60s, tiep tuc...")
+                        else:
+                            log(f"[{sid}] Khong co captcha visible, tiep tuc...")
 
             # ── Lấy token từ active tab (sau redirect về localhost) ──
             set_status(session_id, "Lay token...")
