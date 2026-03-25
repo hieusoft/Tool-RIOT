@@ -32,7 +32,7 @@ _running   = False
 _stop_flag = False
 
 BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
-ACCOUNT_FILE = os.path.join(BASE_DIR, "account_login.txt")
+ACCOUNT_FILE = os.path.join(BASE_DIR, "account_login.xlsx")
 
 # ── Signal bridge (asyncio → Qt) ──────────────────────────────────────────────
 class Bridge(QObject):
@@ -104,21 +104,27 @@ def set_status(session_id, status, note=""):
 # ── Load accounts ─────────────────────────────────────────────────────────────
 def load_accounts():
     """
-    Đọc file account_login.txt, mỗi dòng: username|password
+    Đọc file account_login.xlsx, Sheet1: cột A=username, B=password
     """
     accounts = []
     if not os.path.exists(ACCOUNT_FILE):
         log(f"!! Khong tim thay file: {ACCOUNT_FILE}")
         return accounts
-    with open(ACCOUNT_FILE, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
+    try:
+        from openpyxl import load_workbook
+        wb = load_workbook(ACCOUNT_FILE, read_only=True)
+        ws = wb.active
+        for row in ws.iter_rows(min_row=2, values_only=True):  # skip header
+            if not row or not row[0]:
                 continue
-            parts = line.split("|")
-            if len(parts) >= 2:
-                accounts.append({"username": parts[0].strip(), "password": parts[1].strip()})
-    log(f">> Doc duoc {len(accounts)} tai khoan tu account_login.txt")
+            username = str(row[0]).strip()
+            password = str(row[1]).strip() if len(row) > 1 and row[1] else ""
+            if username:
+                accounts.append({"username": username, "password": password})
+        wb.close()
+    except Exception as e:
+        log(f"!! Loi doc file Excel: {e}")
+    log(f">> Doc duoc {len(accounts)} tai khoan tu {os.path.basename(ACCOUNT_FILE)}")
     return accounts
 
 # ── Automation ────────────────────────────────────────────────────────────────

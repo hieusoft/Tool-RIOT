@@ -274,9 +274,9 @@ class LoginTab(QWidget):
         self.btn_stop.setObjectName("btn_stop"); self.btn_stop.setFixedHeight(32)
         self.btn_stop.setEnabled(False); self.btn_stop.clicked.connect(core_login.trigger_stop)
 
-        self.btn_export = QPushButton("XUAT TXT")
+        self.btn_export = QPushButton("XUAT EXCEL")
         self.btn_export.setObjectName("btn_export"); self.btn_export.setFixedHeight(32)
-        self.btn_export.clicked.connect(self._export_txt)
+        self.btn_export.clicked.connect(self._export_excel)
 
         self.btn_start = QPushButton("▶  BAT DAU")
         self.btn_start.setObjectName("btn_start_login"); self.btn_start.setFixedHeight(32)
@@ -424,16 +424,21 @@ class LoginTab(QWidget):
         self.s_mfa.setText(str(sum(1 for e in log if "2FA" in e.get("status",""))))
         self.s_error.setText(str(sum(1 for e in log if "Loi" in e.get("status",""))))
 
-    def _export_txt(self):
+    def _export_excel(self):
         if not core_login.acct_log:
             QMessageBox.information(self, "Thong bao", "Chua co du lieu de xuat!")
             return
-        path, _ = QFileDialog.getSaveFileName(self, "Luu file", "login_results.txt", "Text Files (*.txt)")
+        path, _ = QFileDialog.getSaveFileName(self, "Luu file", "login_results.xlsx", "Excel Files (*.xlsx)")
         if not path: return
-        lines = [f"{e['username']}|{e.get('password','')}|{e.get('status','?')}|{e.get('note','')}|{e.get('cookies','')}" for e in core_login.acct_log]
-        with open(path, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines))
-        QMessageBox.information(self, "Thanh cong", f"Da xuat {len(lines)} dong ra:\n{path}")
+        from openpyxl import Workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Login Results"
+        ws.append(["Username", "Password", "Status", "Note", "Cookies"])
+        for e in core_login.acct_log:
+            ws.append([e.get('username',''), e.get('password',''), e.get('status',''), e.get('note',''), e.get('cookies','')])
+        wb.save(path)
+        QMessageBox.information(self, "Thanh cong", f"Da xuat {len(core_login.acct_log)} dong ra:\n{path}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -464,9 +469,9 @@ class ChangepassTab(QWidget):
         self.btn_stop.setObjectName("btn_stop"); self.btn_stop.setFixedHeight(32)
         self.btn_stop.setEnabled(False); self.btn_stop.clicked.connect(core_changepass.trigger_stop)
 
-        self.btn_export = QPushButton("XUAT TXT")
+        self.btn_export = QPushButton("XUAT EXCEL")
         self.btn_export.setObjectName("btn_export"); self.btn_export.setFixedHeight(32)
-        self.btn_export.clicked.connect(self._export_txt)
+        self.btn_export.clicked.connect(self._export_excel)
 
         self.btn_start = QPushButton("▶  BAT DAU")
         self.btn_start.setObjectName("btn_start_changepass"); self.btn_start.setFixedHeight(32)
@@ -582,16 +587,21 @@ class ChangepassTab(QWidget):
         self.s_done.setText(str(sum(1 for e in log if "Hoan" in e.get("status",""))))
         self.s_error.setText(str(sum(1 for e in log if "Loi" in e.get("status",""))))
 
-    def _export_txt(self):
+    def _export_excel(self):
         if not core_changepass.acct_log:
             QMessageBox.information(self, "Thong bao", "Chua co du lieu de xuat!")
             return
-        path, _ = QFileDialog.getSaveFileName(self, "Luu file", "changed_accounts.txt", "Text Files (*.txt)")
+        path, _ = QFileDialog.getSaveFileName(self, "Luu file", "changed_accounts.xlsx", "Excel Files (*.xlsx)")
         if not path: return
-        lines = [f"{e['username']}|{e.get('new_password','')}|{e.get('status','?')}" for e in core_changepass.acct_log]
-        with open(path, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines))
-        QMessageBox.information(self, "Thanh cong", f"Da xuat {len(lines)} dong ra:\n{path}")
+        from openpyxl import Workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Change Password Results"
+        ws.append(["Username", "New Password", "Status"])
+        for e in core_changepass.acct_log:
+            ws.append([e.get('username',''), e.get('new_password',''), e.get('status','')])
+        wb.save(path)
+        QMessageBox.information(self, "Thanh cong", f"Da xuat {len(core_changepass.acct_log)} dong ra:\n{path}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -622,9 +632,9 @@ class RegisterTab(QWidget):
         self.btn_stop.setObjectName("btn_stop"); self.btn_stop.setFixedHeight(32)
         self.btn_stop.setEnabled(False); self.btn_stop.clicked.connect(core_register.trigger_stop)
 
-        self.btn_export = QPushButton("XUAT TXT")
+        self.btn_export = QPushButton("XUAT EXCEL")
         self.btn_export.setObjectName("btn_export"); self.btn_export.setFixedHeight(32)
-        self.btn_export.clicked.connect(self._export_txt)
+        self.btn_export.clicked.connect(self._export_excel)
 
         self.btn_start = QPushButton("▶  BAT DAU")
         self.btn_start.setObjectName("btn_start_register"); self.btn_start.setFixedHeight(32)
@@ -741,16 +751,21 @@ class RegisterTab(QWidget):
         self.s_running.setText(str(sum(1 for e in log if "chay" in e.get("status","").lower())))
         self.s_done.setText(str(sum(1 for e in log if "Hoan" in e.get("status",""))))
 
-    def _export_txt(self):
+    def _export_excel(self):
         if not core_register.acct_log:
             QMessageBox.information(self, "Thong bao", "Chua co du lieu de xuat!")
             return
-        path, _ = QFileDialog.getSaveFileName(self, "Luu file", "accounts.txt", "Text Files (*.txt)")
+        path, _ = QFileDialog.getSaveFileName(self, "Luu file", "accounts.xlsx", "Excel Files (*.xlsx)")
         if not path: return
-        lines = [f"{e['username']}|{e['email']}|{e['password']}|{e.get('token','')}" for e in core_register.acct_log]
-        with open(path, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines))
-        QMessageBox.information(self, "Thanh cong", f"Da xuat {len(lines)} tai khoan ra:\n{path}")
+        from openpyxl import Workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Register Results"
+        ws.append(["Username", "Email", "Password", "Token"])
+        for e in core_register.acct_log:
+            ws.append([e.get('username',''), e.get('email',''), e.get('password',''), e.get('token','')])
+        wb.save(path)
+        QMessageBox.information(self, "Thanh cong", f"Da xuat {len(core_register.acct_log)} tai khoan ra:\n{path}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

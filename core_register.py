@@ -9,6 +9,7 @@ import random
 import time
 import sys
 import re
+import os
 import urllib.parse
 from datetime import datetime
 from faker import Faker
@@ -32,6 +33,9 @@ _req_id    = 0
 _loop      = None
 _running   = False
 _stop_flag = False
+
+BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
+ACCOUNT_FILE = os.path.join(BASE_DIR, "account_register.xlsx")
 
 # ── Signal bridge (asyncio → Qt) ──────────────────────────────────────────────
 class Bridge(QObject):
@@ -98,17 +102,44 @@ def set_status(session_id, status):
             break
     bridge.refresh_signal.emit()
 
+# ── Load accounts ─────────────────────────────────────────────────────────────
+def load_accounts():
+    """
+    Đọc file account_register.xlsx
+    Sheet1: cột A=email, B=username, C=password
+    """
+    accounts = []
+    if not os.path.exists(ACCOUNT_FILE):
+        log(f"!! Khong tim thay file: {ACCOUNT_FILE}")
+        return accounts
+    try:
+        from openpyxl import load_workbook
+        wb = load_workbook(ACCOUNT_FILE, read_only=True)
+        ws = wb.active
+        for row in ws.iter_rows(min_row=2, values_only=True):  # skip header
+            if not row or not row[0]:
+                continue
+            email    = str(row[0]).strip()
+            username = str(row[1]).strip() if len(row) > 1 and row[1] else ""
+            password = str(row[2]).strip() if len(row) > 2 and row[2] else ""
+            if email:
+                accounts.append({"email": email, "username": username, "password": password})
+        wb.close()
+    except Exception as e:
+        log(f"!! Loi doc file Excel: {e}")
+    log(f">> Doc duoc {len(accounts)} tai khoan tu {os.path.basename(ACCOUNT_FILE)}")
+    return accounts
+
 # ── Automation ────────────────────────────────────────────────────────────────
 # ── Automation ────────────────────────────────────────────────────────────────
 async def run_signup(session_id, email, username, password):
     sid = str(session_id)[:8]
 
-    while True:
-        if _stop_flag:
-            set_status(session_id, "Da dung")
-            return
-        log(f"[{sid}] Start: {email} / {username}")
-        set_status(session_id, "Dang chay")
+    if _stop_flag:
+        set_status(session_id, "Da dung")
+        return
+    log(f"[{sid}] Start: {email} / {username}")
+    set_status(session_id, "Dang chay")
 
         sw  = lambda a, d, **kw: send_and_wait(session_id, a, d, **kw)
         wfs = lambda s, **kw: wait_for_selector(session_id, s, **kw)
@@ -187,24 +218,15 @@ async def run_signup(session_id, email, username, password):
 
                         captcha_sel = 'iframe[src*="hcaptcha.com"]'
                         log(f"[{sid}] Kiem tra hCaptcha...")
-                        captcha_elapsed = 0
-                        while captcha_elapsed < 60:
-                            res_cap = await send_and_wait(session_id, "check_element",
-                                                        tab({"selector": 'iframe[src*="hcaptcha.com"][src*="frame=checkbox"]:not([src*="invisible"])'}), timeout=5)
-                            found_cap = (res_cap or {}).get("result", {})
-                            if isinstance(found_cap, dict):
-                                found_cap = found_cap.get("found", False)
-                            else:
-                                found_cap = bool(found_cap)
-                            if not found_cap:
+                        while True:
+                            res   = await send_and_wait(session_id, "check_element",
+                                                        {"selector": captcha_sel}, timeout=5)
+                            found = (res or {}).get("result", {}).get("found", False)
+                            if not found:
                                 break
-                            log(f"[{sid}] hCaptcha visible dang hien — cho 5s...")
+                            log(f"[{sid}] hCaptcha dang hien — cho 5s...")
                             await asyncio.sleep(5)
-                            captcha_elapsed += 5
-                        if captcha_elapsed >= 60:
-                            log(f"[{sid}] Captcha timeout 60s, tiep tuc...")
-                        else:
-                            log(f"[{sid}] Khong co captcha visible, tiep tuc...")
+                        log(f"[{sid}] hCaptcha da bien mat, tiep tuc...")
 
             # ── Lấy token từ active tab (sau redirect về localhost) ──
             set_status(session_id, "Lay token...")
@@ -261,67 +283,75 @@ async def run_signup(session_id, email, username, password):
                         e["token"] = ""
                         break
 
-            set_status(session_id, "Hoan thanh")
-            log(f"[{sid}] Logout va don dep tab...")
+        set_status(session_id, "Hoan thanh")
+        log(f"[{sid}] Logout va don dep tab...")
 
-            # Logout + clear cookie
-            await sw("open_url", {"url": LOGOUT_URL})
-            await sw("clear_cookies", {})
-            await asyncio.sleep(2)
+        # Logout + clear cookie
+        await sw("open_url", {"url": LOGOUT_URL})
+        await sw("clear_cookies", {})
+        await asyncio.sleep(2)
 
-            # Đóng tất cả tab trừ 1 (giữ lại tab đầu để browser không tắt)
-            log(f"[{sid}] Don dep tab cu (giu lai 1)...")
-            all_tabs_res = await send_and_wait(session_id, "list_tabs", {}, timeout=5)
-            all_tabs = ((all_tabs_res or {}).get("result", [])) or []
-            for t in all_tabs[1:]:  # bỏ qua tab[0], đóng từ tab[1] trở đi
-                tid = t.get("id") if isinstance(t, dict) else None
-                if tid:
-                    await send_and_wait(session_id, "close_tab", {"tabId": tid}, timeout=5)
-            await asyncio.sleep(1)
+        # Đóng tất cả tab trừ 1
+        log(f"[{sid}] Don dep tab cu (giu lai 1)...")
+        all_tabs_res = await send_and_wait(session_id, "list_tabs", {}, timeout=5)
+        all_tabs = ((all_tabs_res or {}).get("result", [])) or []
+        for t in all_tabs[1:]:
+            tid = t.get("id") if isinstance(t, dict) else None
+            if tid:
+                await send_and_wait(session_id, "close_tab", {"tabId": tid}, timeout=5)
+        await asyncio.sleep(1)
 
-
-
-            if _stop_flag:
-                set_status(session_id, "Da dung")
-                return
-
-            base     = re.sub(r'[^a-zA-Z0-9_]', '', fake.user_name())[:13] or "user"
-            username = base + fake.numerify("##")
-            email    = fake.email()
-            password = "Auto@" + fake.numerify("######")
-            acct_log.append({"session_id": session_id, "username": username,
-                             "email": email, "password": password, "status": "Dang chay"})
-            bridge.refresh_signal.emit()
-            log(f"[{sid}] Vong moi: {email} / {username}")
-
-        except Exception as e:
-            set_status(session_id, "Loi")
-            log(f"[{sid}] Error: {e}")
-            await asyncio.sleep(3)
+    except Exception as e:
+        set_status(session_id, "Loi")
+        log(f"[{sid}] Error: {e}")
+        await asyncio.sleep(3)
 
 
 
 async def run_all_sessions():
     global _running, _stop_flag
     _stop_flag = False
-    if not sessions:
-        log("!! Chua co session nao!")
+
+    accounts = load_accounts()
+    if not accounts:
+        log("!! Khong co tai khoan nao trong account_register.xlsx (dinh dang: email | username | password)")
         _running = False
         bridge.refresh_signal.emit()
         return
 
-    log(f">> Bat dau {len(sessions)} session(s)...")
-    tasks = []
-    for sid in list(sessions.keys()):
-        base     = re.sub(r'[^a-zA-Z0-9_]', '', fake.user_name())[:13] or "user"
-        username = base + fake.numerify("##")
-        email    = fake.email()
-        password = "Auto@" + fake.numerify("######")
-        acct_log.append({"session_id": sid, "username": username,
-                          "email": email, "password": password, "status": "Cho..."})
-        log(f"  >> {email} / {username}")
-        tasks.append(asyncio.create_task(run_signup(sid, email, username, password)))
+    session_ids = list(sessions.keys())
+    if not session_ids:
+        log("!! Chua co session nao ket noi!")
+        _running = False
+        bridge.refresh_signal.emit()
+        return
 
+    log(f">> Bat dau {len(session_ids)} session(s) voi {len(accounts)} tai khoan...")
+
+    queue: asyncio.Queue = asyncio.Queue()
+    for acct in accounts:
+        await queue.put(acct)
+
+    async def session_worker(sid):
+        while not _stop_flag:
+            try:
+                acct = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            email    = acct["email"]
+            username = acct["username"]
+            password = acct["password"]
+            entry = {
+                "session_id": sid, "username": username,
+                "email": email, "password": password, "status": "Cho...",
+            }
+            acct_log.append(entry)
+            bridge.refresh_signal.emit()
+            log(f"  >> [{str(sid)[:8]}] {email} / {username}")
+            await run_signup(sid, email, username, password)
+            queue.task_done()
+
+    tasks = [asyncio.create_task(session_worker(sid)) for sid in session_ids]
     bridge.refresh_signal.emit()
     await asyncio.gather(*tasks, return_exceptions=True)
     log(">> Tat ca sessions hoan thanh!")

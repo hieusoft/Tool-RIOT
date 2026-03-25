@@ -30,7 +30,7 @@ _running   = False
 _stop_flag = False
 
 BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
-ACCOUNT_FILE = os.path.join(BASE_DIR, "account_changepass.txt")
+ACCOUNT_FILE = os.path.join(BASE_DIR, "account_changepass.xlsx")
 
 # ── Signal bridge (asyncio → Qt) ──────────────────────────────────────────────
 class Bridge(QObject):
@@ -100,36 +100,39 @@ def set_status(session_id, status):
 # ── Load accounts ─────────────────────────────────────────────────────────────
 def load_accounts():
     """
-    Đọc file account_changepass.txt
-    Format 2 trường: username|new_password (old_password = empty)
-    Format 3 trường: username|old_password|new_password
+    Đọc file account_changepass.xlsx
+    Sheet1: cột A=username, B=old_password, C=new_password
+    Nếu chỉ 2 cột: A=username, B=password (dùng cho cả old và new)
     """
     accounts = []
     if not os.path.exists(ACCOUNT_FILE):
         log(f"!! Khong tim thay file: {ACCOUNT_FILE}")
         return accounts
-    with open(ACCOUNT_FILE, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
+    try:
+        from openpyxl import load_workbook
+        wb = load_workbook(ACCOUNT_FILE, read_only=True)
+        ws = wb.active
+        for row in ws.iter_rows(min_row=2, values_only=True):  # skip header
+            if not row or not row[0]:
                 continue
-            parts = line.split("|")
-            if len(parts) >= 3:
+            username = str(row[0]).strip()
+            if len(row) >= 3 and row[1] and row[2]:
                 accounts.append({
-                    "username":     parts[0].strip(),
-                    "old_password": parts[1].strip(),
-                    "new_password": parts[2].strip(),
+                    "username":     username,
+                    "old_password": str(row[1]).strip(),
+                    "new_password": str(row[2]).strip(),
                 })
-            elif len(parts) == 2:
-                # Format: username|new_password (login bằng new_password)
+            elif len(row) >= 2 and row[1]:
+                pw = str(row[1]).strip()
                 accounts.append({
-                    "username":     parts[0].strip(),
-                    "old_password": parts[1].strip(),  # dùng chính password này để login
-                    "new_password": parts[1].strip(),  # và đổi thành password mới
+                    "username":     username,
+                    "old_password": pw,
+                    "new_password": pw,
                 })
-            else:
-                log(f"!! Dong sai dinh dang: {line} — bo qua")
-    log(f">> Doc duoc {len(accounts)} tai khoan tu account_changepass.txt")
+        wb.close()
+    except Exception as e:
+        log(f"!! Loi doc file Excel: {e}")
+    log(f">> Doc duoc {len(accounts)} tai khoan tu {os.path.basename(ACCOUNT_FILE)}")
     return accounts
 
 # ── Automation ────────────────────────────────────────────────────────────────
