@@ -56,6 +56,43 @@ def log(msg, _tag="info"):
 async def human_delay(a=0.4, b=1.2):
     await asyncio.sleep(random.uniform(a, b))
 
+async def human_type(session_id, selector, text, tab_id=None):
+    """Gõ từng ký tự với delay ngẫu nhiên, thỉnh thoảng dừng dài hơn."""
+    sw = lambda a, d, **kw: send_and_wait(session_id, a, d, **kw)
+    data = {"selector": selector}
+    if tab_id:
+        data["tabId"] = tab_id
+    # Chia text thành từng chunk nhỏ rồi type tuần tự
+    i = 0
+    while i < len(text):
+        # Lấy chunk 1-4 ký tự
+        chunk_size = random.randint(1, 4)
+        chunk = text[i:i + chunk_size]
+        chunk_data = dict(data)
+        chunk_data["value"] = chunk
+        chunk_data["append"] = True  # nối vào text hiện có
+        # Nếu append không được hỗ trợ, dùng type_text thông thường cho chunk
+        await sw("type_text", chunk_data)
+        i += chunk_size
+        # Delay sau mỗi chunk: 40-180ms
+        delay = random.uniform(0.04, 0.18)
+        # Thỉnh thoảng dừng dài hơn (mô phỏng suy nghĩ)
+        if random.random() < 0.12:
+            delay += random.uniform(0.3, 0.8)
+        await asyncio.sleep(delay)
+
+async def human_click(session_id, selector, tab_id=None):
+    """Click với delay ngẫu nhiên trước và sau để tránh pattern cố định."""
+    sw = lambda a, d, **kw: send_and_wait(session_id, a, d, **kw)
+    # Delay trước click: 200-700ms
+    await asyncio.sleep(random.uniform(0.2, 0.7))
+    data = {"selector": selector}
+    if tab_id:
+        data["tabId"] = tab_id
+    await sw("click", data)
+    # Delay sau click: 100-400ms
+    await asyncio.sleep(random.uniform(0.1, 0.4))
+
 # ── WebSocket communication ───────────────────────────────────────────────────
 async def send_and_wait(session_id, action, data, timeout=30):
     s = sessions.get(session_id)
@@ -156,20 +193,20 @@ async def run_login(session_id, username, password):
             set_status(session_id, "Loi", "Timeout username")
             return
 
-        await human_delay(0.5, 1.0)
-        await sw("type_text", tab({"selector": username_sel, "value": username}))
+        await human_delay(0.5, 1.2)
+        await human_type(session_id, username_sel, username, tab_id)
 
         # ── 4. Nhap Password ──
         password_sel = '[data-testid="input-password"]'
         if await wfs(password_sel, tab_id, max_wait=10):
-            await human_delay(0.3, 0.8)
-            await sw("type_text", tab({"selector": password_sel, "value": password}))
+            await human_delay(0.3, 0.9)
+            await human_type(session_id, password_sel, password, tab_id)
 
-        await human_delay(0.6, 1.3)
+        await human_delay(0.5, 1.5)
 
         # ── 5. Bam Login ──
         submit_sel = '[data-testid="btn-signin-submit"]'
-        await sw("click", tab({"selector": submit_sel}))
+        await human_click(session_id, submit_sel, tab_id)
         log(f"[{sid}] Da bam Login, cho phan hoi...")
 
         # ── 6. Cho hCaptcha neu xuat hien ──

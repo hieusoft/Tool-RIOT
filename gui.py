@@ -227,10 +227,14 @@ STATUS_COLORS = {
     "Lay cookie...":   ("#0e1a2a", "#7ab0ff"),
     "Lay token...":    ("#0e1a2a", "#c0a0ff"),
     "Loi":             ("#2a1111", "#ff7070"),
+    "Login loi":       ("#2a1111", "#ff7070"),
     "Da dung":         ("#1a1a1a", "#888888"),
     "Dang chay":       ("#0e1a2a", "#7ab0ff"),
     "Can 2FA":         ("#2a1e0a", "#e8a030"),
     "Can kiem tra":    ("#1a1a2a", "#a090d0"),
+    "Cho...":          ("#111620", "#5a7090"),
+    "Ket noi":         ("#111a24", "#4a80b0"),
+    "Khong co token":  ("#1a1a20", "#9090b0"),
 }
 
 def make_cell(text, bg, fg, align=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter):

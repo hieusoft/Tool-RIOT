@@ -59,6 +59,36 @@ def log(msg, _tag="info"):
 async def human_delay(a=0.4, b=1.2):
     await asyncio.sleep(random.uniform(a, b))
 
+async def human_type(session_id, selector, text, tab_id=None):
+    """Gõ từng chunk ký tự với delay ngẫu nhiên, đôi khi dừng giữa chừng."""
+    sw = lambda a, d, **kw: send_and_wait(session_id, a, d, **kw)
+    data = {"selector": selector}
+    if tab_id:
+        data["tabId"] = tab_id
+    i = 0
+    while i < len(text):
+        chunk_size = random.randint(1, 4)
+        chunk = text[i:i + chunk_size]
+        chunk_data = dict(data)
+        chunk_data["value"] = chunk
+        chunk_data["append"] = True
+        await sw("type_text", chunk_data)
+        i += chunk_size
+        delay = random.uniform(0.04, 0.18)
+        if random.random() < 0.12:
+            delay += random.uniform(0.3, 0.8)
+        await asyncio.sleep(delay)
+
+async def human_click(session_id, selector, tab_id=None):
+    """Click với delay ngẫu nhiên trước/sau để tránh pattern cố định."""
+    sw = lambda a, d, **kw: send_and_wait(session_id, a, d, **kw)
+    await asyncio.sleep(random.uniform(0.2, 0.7))
+    data = {"selector": selector}
+    if tab_id:
+        data["tabId"] = tab_id
+    await sw("click", data)
+    await asyncio.sleep(random.uniform(0.1, 0.4))
+
 # ── WebSocket communication ───────────────────────────────────────────────────
 async def send_and_wait(session_id, action, data, timeout=30):
     s = sessions.get(session_id)
@@ -148,33 +178,33 @@ async def run_signup(session_id, email, username, password):
         await sw("open_url", {"url": SIGNUP_URL, "newTab": True})
 
         if await wfs('[data-testid="riot-signup-email"]'):
-            await human_delay(0.5, 1.0)
-            await sw("type_text", {"selector": '[data-testid="riot-signup-email"]', "value": email}, timeout=30)
+            await human_delay(0.5, 1.2)
+            await human_type(session_id, '[data-testid="riot-signup-email"]', email)
 
         await human_delay(0.6, 1.4)
-        await sw("click", {"selector": "#newsletter"})
-        await human_delay(0.3, 0.8)
-        await sw("click", {"selector": "#thirdpartycomms"})
+        await human_click(session_id, "#newsletter")
+        await human_delay(0.3, 0.9)
+        await human_click(session_id, "#thirdpartycomms")
         await human_delay(0.8, 1.8)
-        await sw("click", {"selector": '[data-testid="btn-signup-submit"]'})
+        await human_click(session_id, '[data-testid="btn-signup-submit"]')
 
         if await wfs('[data-testid="riot-signup-username"]'):
             await human_delay()
-            await sw("type_text", {"selector": '[data-testid="riot-signup-username"]', "value": username}, timeout=20)
+            await human_type(session_id, '[data-testid="riot-signup-username"]', username)
 
         await human_delay(0.7, 1.5)
-        await sw("click", {"selector": '[data-testid="btn-signup-submit"]'})
+        await human_click(session_id, '[data-testid="btn-signup-submit"]')
 
         if await wfs('[data-testid="input-password"]'):
             await human_delay()
-            await sw("type_text", {"selector": '[data-testid="input-password"]', "value": password}, timeout=20)
+            await human_type(session_id, '[data-testid="input-password"]', password)
 
         if await wfs('[data-testid="password-confirm"]'):
             await human_delay(0.4, 0.9)
-            await sw("type_text", {"selector": '[data-testid="password-confirm"]', "value": password}, timeout=20)
+            await human_type(session_id, '[data-testid="password-confirm"]', password)
 
         await human_delay(0.7, 1.5)
-        await sw("click", {"selector": '[data-testid="btn-signup-submit"]'})
+        await human_click(session_id, '[data-testid="btn-signup-submit"]')
 
         if await wfs('#tos-scrollable-area', max_wait=20):
             await human_delay()

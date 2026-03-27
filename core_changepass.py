@@ -54,6 +54,36 @@ def log(msg, _tag="info"):
 async def human_delay(a=0.4, b=1.2):
     await asyncio.sleep(random.uniform(a, b))
 
+async def human_type(session_id, selector, text, tab_id=None):
+    """Gõ từng chunk ký tự với delay ngẫu nhiên, đôi khi dừng giữa chừng."""
+    sw = lambda a, d, **kw: send_and_wait(session_id, a, d, **kw)
+    data = {"selector": selector}
+    if tab_id:
+        data["tabId"] = tab_id
+    i = 0
+    while i < len(text):
+        chunk_size = random.randint(1, 4)
+        chunk = text[i:i + chunk_size]
+        chunk_data = dict(data)
+        chunk_data["value"] = chunk
+        chunk_data["append"] = True
+        await sw("type_text", chunk_data)
+        i += chunk_size
+        delay = random.uniform(0.04, 0.18)
+        if random.random() < 0.12:
+            delay += random.uniform(0.3, 0.8)
+        await asyncio.sleep(delay)
+
+async def human_click(session_id, selector, tab_id=None):
+    """Click với delay ngẫu nhiên trước/sau để tránh pattern cố định."""
+    sw = lambda a, d, **kw: send_and_wait(session_id, a, d, **kw)
+    await asyncio.sleep(random.uniform(0.2, 0.7))
+    data = {"selector": selector}
+    if tab_id:
+        data["tabId"] = tab_id
+    await sw("click", data)
+    await asyncio.sleep(random.uniform(0.1, 0.4))
+
 # ── WebSocket communication ───────────────────────────────────────────────────
 async def send_and_wait(session_id, action, data, timeout=30):
     s = sessions.get(session_id)
@@ -159,8 +189,8 @@ async def run_changepass(session_id, username, old_password, new_password):
 
         # ── 2. Nhap username ──
         if await wfs('[data-testid="input-username"]', tab_id, max_wait=25):
-            await human_delay(0.5, 1.0)
-            await sw("type_text", tab({"selector": '[data-testid="input-username"]', "value": username}))
+            await human_delay(0.5, 1.2)
+            await human_type(session_id, '[data-testid="input-username"]', username, tab_id)
         else:
             log(f"[{sid}] !! Khong thay o username")
             set_status(session_id, "Loi")
@@ -170,13 +200,13 @@ async def run_changepass(session_id, username, old_password, new_password):
 
         # ── 3. Nhap password ──
         if await wfs('[data-testid="input-password"]', tab_id, max_wait=10):
-            await human_delay(0.3, 0.7)
-            await sw("type_text", tab({"selector": '[data-testid="input-password"]', "value": old_password}))
+            await human_delay(0.3, 0.8)
+            await human_type(session_id, '[data-testid="input-password"]', old_password, tab_id)
 
-        await human_delay(0.6, 1.2)
+        await human_delay(0.5, 1.5)
 
         # ── 4. Bam Login ──
-        await sw("click", tab({"selector": '[data-testid="btn-signin-submit"]'}))
+        await human_click(session_id, '[data-testid="btn-signin-submit"]', tab_id)
         log(f"[{sid}] Da bam Login, cho trang tai...")
         log(f"[{sid}] Kiem tra hCaptcha...")
         captcha_elapsed = 0
@@ -224,13 +254,13 @@ async def run_changepass(session_id, username, old_password, new_password):
         await human_delay(0.5, 1.0)
 
         # ── 7. Dien Current Password ──
-        await sw("type_text", tab({"selector": cur_pass_sel, "value": old_password}))
+        await human_type(session_id, cur_pass_sel, old_password, tab_id)
 
         # ── 8. Dien New Password ──
         new_pass_sel = '[data-testid="password-card__newPassword"]'
         if await wfs(new_pass_sel, tab_id, max_wait=8):
-            await human_delay(0.3, 0.6)
-            await sw("type_text", tab({"selector": new_pass_sel, "value": new_password}))
+            await human_delay(0.3, 0.7)
+            await human_type(session_id, new_pass_sel, new_password, tab_id)
         else:
             log(f"[{sid}] !! Khong thay truong 'New Password'")
             set_status(session_id, "Loi")
@@ -239,20 +269,18 @@ async def run_changepass(session_id, username, old_password, new_password):
         # ── 9. Confirm New Password ──
         confirm_sel = '[data-testid="password-card__confirmNewPassword"]'
         if await wfs(confirm_sel, tab_id, max_wait=8):
-            await human_delay(0.3, 0.6)
-            await sw("type_text", tab({"selector": confirm_sel, "value": new_password}))
+            await human_delay(0.3, 0.7)
+            await human_type(session_id, confirm_sel, new_password, tab_id)
 
 
-        await human_delay(0.7, 1.4)
+        await human_delay(0.7, 1.6)
 
         # ── 10. Bam Save / Submit ──
         submit_sel         = '[data-testid="password-card__submit-btn"]'
         submit_enabled_sel = '[data-testid="password-card__submit-btn"]:not([disabled])'
         log(f"[{sid}] Cho nut Save duoc active...")
-        # Chờ button bỏ disabled (tối đa 8s)
         if await wfs(submit_enabled_sel, tab_id, max_wait=8):
-            await human_delay(0.4, 0.8)
-            await sw("click", tab({"selector": submit_sel}))
+            await human_click(session_id, submit_sel, tab_id)
             log(f"[{sid}] Da bam Save Changes!")
         else:
             log(f"[{sid}] !! Nut Save van disabled — co the mat khau khong hop le")
