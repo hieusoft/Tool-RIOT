@@ -362,7 +362,7 @@ class LoginTab(QWidget):
 
     def _on_log(self, msg): self.log_box.append(msg)
     def _clear_log(self): self.log_box.clear()
-    def _tick(self): self._refresh_sessions()
+    def _tick(self): self._refresh_sessions(); self._refresh_table(); self._refresh_stats()
 
     def _on_refresh(self):
         self._refresh_sessions(); self._refresh_table(); self._refresh_stats()
