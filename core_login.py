@@ -208,15 +208,16 @@ async def run_login(session_id, username, password):
         submit_sel = '[data-testid="btn-signin-submit"]'
         await human_click(session_id, submit_sel, tab_id)
         log(f"[{sid}] Da bam Login, cho phan hoi...")
-
+        await asyncio.sleep(5)
         # ── 6. Cho hCaptcha neu xuat hien ──
         # Chi check captcha VISIBLE (checkbox frame), bo qua invisible captcha (tu solve)
         # Frame checkbox co src chua "frame=checkbox" va KHONG phai checkbox-invisible
         log(f"[{sid}] Kiem tra hCaptcha...")
+
         captcha_elapsed = 0
         while captcha_elapsed < 60:
             res_cap = await send_and_wait(session_id, "check_element",
-                                          tab({"selector": 'iframe[src*="hcaptcha.com"][src*="frame=checkbox"]:not([src*="invisible"]), iframe[src*="hcaptcha.com"][src*="frame=challenge"]'}), timeout=5)
+                                          tab({"selector": 'div[style*="z-index: 2147483647"][style*="visibility: visible"]'}), timeout=5) 
             found_cap = (res_cap or {}).get("result", {})
             if isinstance(found_cap, dict):
                 found_cap = found_cap.get("found", False)

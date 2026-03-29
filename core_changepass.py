@@ -208,11 +208,13 @@ async def run_changepass(session_id, username, old_password, new_password):
         # ── 4. Bam Login ──
         await human_click(session_id, '[data-testid="btn-signin-submit"]', tab_id)
         log(f"[{sid}] Da bam Login, cho trang tai...")
+        await asyncio.sleep(5)
         log(f"[{sid}] Kiem tra hCaptcha...")
+
         captcha_elapsed = 0
         while captcha_elapsed < 60:
             res_cap = await send_and_wait(session_id, "check_element",
-                                          tab({"selector": 'iframe[src*="hcaptcha.com"][src*="frame=checkbox"]:not([src*="invisible"]), iframe[src*="hcaptcha.com"][src*="frame=challenge"]'}), timeout=5)
+                                          tab({"selector": 'div[style*="z-index: 2147483647"][style*="visibility: visible"]'}), timeout=5) 
             found_cap = (res_cap or {}).get("result", {})
             if isinstance(found_cap, dict):
                 found_cap = found_cap.get("found", False)
