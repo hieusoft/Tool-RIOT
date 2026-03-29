@@ -245,7 +245,7 @@ async def run_signup(session_id, email, username, password):
                         await sw("click", {"selector": '[data-testid="btn-signup-submit"]'})
                         await human_delay(1.0, 2.0)
 
-                    captcha_sel = 'iframe[src*="hcaptcha.com"]'
+                    captcha_sel = 'iframe[src*="hcaptcha.com"][src*="frame=checkbox"]:not([src*="invisible"]), iframe[src*="hcaptcha.com"][src*="frame=challenge"]'
                     log(f"[{sid}] Kiem tra hCaptcha...")
                     while True:
                         res   = await send_and_wait(session_id, "check_element",
