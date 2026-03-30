@@ -236,17 +236,19 @@ async def run_login(session_id, username, password):
         # ── 7. Kiem tra ket qua ──
         await asyncio.sleep(7)
 
-        error_sels = [
-            '[data-testid="error-message"]',
-        ]
-        for err_sel in error_sels:
-            res_err = await send_and_wait(session_id, "check_element",
-                                          tab({"selector": err_sel}), timeout=4)
-            if (res_err or {}).get("result", {}).get("found"):
-                log(f"[{sid}] !! Co thong bao loi hien thi — co the sai mat khau")
-                set_status(session_id, "Loi", "Sai mat khau")
-                return
-
+        err_script = "var el = document.querySelector('[data-testid=\"error-message\"]'); el ? (el.innerText || el.textContent).trim() : null;"
+        res_err = await send_and_wait(session_id, "execute_script", tab({"script": err_script}), timeout=4)
+        err_text = (res_err or {}).get("result")
+        
+        if err_text:
+            # Phan loai thong bao loi dua tren text
+            if "CAPTCHA" in err_text.upper() :
+                log(f"[{sid}] !! Loi CAPTCHA hien thi: {err_text}")
+                set_status(session_id, "Loi CAPTCHA", err_text)
+            else:
+                log(f"[{sid}] !! Co thong bao loi: {err_text}")
+                set_status(session_id, "Sai mat khau", err_text)
+            return
         # mfa_sels = [
         #     '[data-testid="mfa-code-input"]',
         #     'input[placeholder*="code"]',

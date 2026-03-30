@@ -26,9 +26,6 @@ import core_register
 # ── Global asyncio loop (shared) ─────────────────────────────────────────────
 _loop = None
 
-# session_id → module name ("login" | "changepass" | "register")
-_session_module_map = {}
-
 # ── Stylesheet chung ──────────────────────────────────────────────────────────
 STYLE = """
 QMainWindow, QWidget#root {
@@ -228,6 +225,8 @@ STATUS_COLORS = {
     "Lay token...":    ("#0e1a2a", "#c0a0ff"),
     "Loi":             ("#2a1111", "#ff7070"),
     "Login loi":       ("#2a1111", "#ff7070"),
+    "Loi CAPTCHA":     ("#2a1111", "#ff7070"),
+    "Sai mat khau":    ("#2a1111", "#ff7070"),
     "Da dung":         ("#1a1a1a", "#888888"),
     "Dang chay":       ("#0e1a2a", "#7ab0ff"),
     "Can 2FA":         ("#2a1e0a", "#e8a030"),
@@ -426,7 +425,7 @@ class LoginTab(QWidget):
         self.s_running.setText(str(sum(1 for e in log if "chay" in e.get("status","").lower())))
         self.s_done.setText(str(sum(1 for e in log if "Hoan" in e.get("status",""))))
         self.s_mfa.setText(str(sum(1 for e in log if "2FA" in e.get("status",""))))
-        self.s_error.setText(str(sum(1 for e in log if "Loi" in e.get("status",""))))
+        self.s_error.setText(str(sum(1 for e in log if "Loi" in e.get("status","") or "Sai" in e.get("status",""))))
 
     def _export_excel(self):
         if not core_login.acct_log:
@@ -851,8 +850,8 @@ MODULES = {
     "register":   core_register,
 }
 
-# Map session_id → tên module (được set khi extension gửi register kèm "mode")
-_session_module = {}   # {session_id: "login" | "changepass" | "register"}
+# Map session_id → list tên module (session được đăng ký vào TẤT CẢ modules)
+_session_modules = {}   # {session_id: ["login", "changepass", "register"]}
 
 _main_window = None   # set từ run.py
 
@@ -860,7 +859,7 @@ import websockets
 
 async def ws_handler(websocket):
     session_id = None
-    mod = None
+    registered_modules = []   # danh sách module đã đăng ký cho session này
     try:
         async for raw in websocket:
             try:
@@ -875,48 +874,50 @@ async def ws_handler(websocket):
                 if not session_id:
                     continue
 
-                # Extension gửi "mode": "login" | "changepass" | "register"
-                # Nếu không có → mặc định "login"
-                mode = msg.get("mode", "login").lower()
-                if mode not in MODULES:
-                    mode = "login"
-
-                mod = MODULES[mode]
-                _session_module[session_id] = mode
-
-                mod.sessions[session_id] = {
+                # Đăng ký session vào TẤT CẢ modules (login, changepass, register)
+                # để bất kỳ tab nào trên GUI đều có thể sử dụng session này
+                session_data = {
                     "ws": websocket, "info": msg,
                     "pending": {}, "status": "Ket noi",
                     "connected_at": time.time()
                 }
-                print(f"[WS] ++ Session [{str(session_id)[:8]}] mode={mode} ({sum(len(m.sessions) for m in MODULES.values())} total)")
-                mod.bridge.refresh_signal.emit()
+                registered_modules = list(MODULES.keys())
+                _session_modules[session_id] = registered_modules
+
+                for mod_name, mod in MODULES.items():
+                    mod.sessions[session_id] = dict(session_data)
+                    mod.sessions[session_id]["pending"] = {}  # mỗi module cần pending riêng
+                    mod.bridge.refresh_signal.emit()
+
+                print(f"[WS] ++ Session [{str(session_id)[:8]}] ALL modules ({sum(len(m.sessions) for m in MODULES.values())} total)")
 
             elif t == "result":
-                # Route về đúng module
+                # Route result về TẤT CẢ modules có session này
                 rid = msg.get("requestId")
                 sid = msg.get("sessionId") or session_id
                 if sid is None:
                     continue
-                m_name = _session_module.get(sid)
-                if not m_name:
-                    continue
-                m = MODULES[m_name]
-                if sid in m.sessions:
-                    p = m.sessions[sid]["pending"]
-                    if rid and rid in p and not p[rid].done():
-                        p[rid].set_result(msg)
+                mod_names = _session_modules.get(sid, [])
+                for m_name in mod_names:
+                    m = MODULES.get(m_name)
+                    if m and sid in m.sessions:
+                        p = m.sessions[sid]["pending"]
+                        if rid and rid in p and not p[rid].done():
+                            p[rid].set_result(msg)
 
     except websockets.exceptions.ConnectionClosed:
         pass
     except Exception as e:
         print(f"[WS] Handler error: {e}")
     finally:
-        if session_id and mod and session_id in mod.sessions:
-            mod.sessions.pop(session_id, None)
-            _session_module.pop(session_id, None)
+        if session_id:
+            for mod_name in registered_modules:
+                mod = MODULES.get(mod_name)
+                if mod and session_id in mod.sessions:
+                    mod.sessions.pop(session_id, None)
+                    mod.bridge.refresh_signal.emit()
+            _session_modules.pop(session_id, None)
             print(f"[WS] -- Session ngat: {str(session_id)[:8]}")
-            mod.bridge.refresh_signal.emit()
 
 
 async def _ws_server_coro():

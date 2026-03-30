@@ -1,9 +1,7 @@
 const logEl     = document.getElementById("log");
-const btnReady  = document.getElementById("btn-ready");
 const sessionEl = document.getElementById("session-id");
 const statusEl  = document.getElementById("status-badge");
 const wsDot     = document.getElementById("ws-dot");
-const modeEl    = document.getElementById("mode-select");
 
 function addLog(msg, cls = "") {
   const line = document.createElement("div");
@@ -17,25 +15,6 @@ function setStatus(label, cls) {
   statusEl.textContent = label;
   statusEl.className = "badge " + cls;
 }
-
-// Khôi phục mode đã chọn từ storage
-chrome.storage.local.get(["selectedMode"], (res) => {
-  if (res.selectedMode) modeEl.value = res.selectedMode;
-});
-
-modeEl.addEventListener("change", () => {
-  const newMode = modeEl.value;
-  chrome.storage.local.set({ selectedMode: newMode });
-
-  // Reset UI về trạng thái chờ để đăng ký lại với mode mới
-  setStatus("Cho", "idle");
-  btnReady.disabled = false;
-  btnReady.textContent = "San sang";
-  btnReady.classList.remove("active");
-
-  // Thông báo background huỷ đăng ký cũ
-  chrome.runtime.sendMessage({ type: "unregister" });
-});
 
 // Lấy trạng thái hiện tại từ background
 chrome.runtime.sendMessage({ type: "get_state" }, (res) => {
@@ -56,36 +35,11 @@ chrome.runtime.sendMessage({ type: "get_state" }, (res) => {
   }
 
   if (registered) {
-    setStatus("Da dang ky", "ready");
-    btnReady.disabled = true;
-    btnReady.textContent = "Da san sang";
-    btnReady.classList.add("active");
-    addLog("Da dang ky voi server", "ok");
+    setStatus("Da ket noi", "ready");
+    addLog("Da tu dong ket noi voi server", "ok");
+  } else if (wsConnected) {
+    setStatus("Dang ket noi...", "running");
   } else {
-    setStatus("Cho", "idle");
+    setStatus("Cho ket noi", "idle");
   }
-});
-
-// Nút Sẵn sàng
-btnReady.addEventListener("click", () => {
-  const mode = modeEl.value;
-  btnReady.disabled = true;
-  btnReady.textContent = "Dang dang ky...";
-  setStatus("Dang ket noi...", "running");
-  addLog("Gui lenh san sang (mode=" + mode + ")...", "info");
-
-  chrome.runtime.sendMessage({ type: "register_now", mode }, (res) => {
-    if (chrome.runtime.lastError || !res?.ok) {
-      addLog("That bai: " + (res?.error || chrome.runtime.lastError?.message), "err");
-      setStatus("Loi", "error");
-      btnReady.disabled = false;
-      btnReady.textContent = "San sang";
-      btnReady.classList.remove("active");
-      return;
-    }
-    setStatus("Da dang ky", "ready");
-    btnReady.textContent = "Da san sang";
-    btnReady.classList.add("active");
-    addLog("Dang ky thanh cong! mode=" + mode, "ok");
-  });
 });

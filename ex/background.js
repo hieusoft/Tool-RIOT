@@ -3,7 +3,7 @@ const WS_URL = "ws://127.0.0.1:8000/ws";
 let SESSION_ID  = null;
 let ws          = null;
 let wsConnected = false;
-let registered  = false;   // true sau khi user bấm "Sẵn sàng"
+let registered  = false;   // true sau khi auto-register thành công
 let reconnectTimer = null;
 
 function log(...args) {
@@ -21,7 +21,6 @@ async function initSession() {
     await chrome.storage.local.set({ sessionId: SESSION_ID });
     log("New sessionId:", SESSION_ID);
   }
-  // Kết nối WS nhưng CHƯA register – chờ user bấm "Sẵn sàng"
   connectWebSocket();
 }
 
@@ -36,8 +35,8 @@ function connectWebSocket() {
 
   ws.onopen = () => {
     wsConnected = true;
-    log("WS connected. Chờ user bấm Sẵn sàng...");
-    // KHÔNG tự gửi register ở đây
+    log("WS connected. Auto-registering...");
+    sendRegister();
   };
 
   ws.onmessage = async (event) => {
@@ -90,22 +89,20 @@ function scheduleReconnect() {
   }, 3000);
 }
 
-// ── Gửi register lên server ────────────────────────────────────────────────── 
-function sendRegister(mode) {
+// ── Gửi register lên server (auto, không cần mode) ─────────────────────────
+function sendRegister() {
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     return false;
   }
-  const m = mode || "login";
   ws.send(JSON.stringify({
     type: "register",
     sessionId: SESSION_ID,
-    mode: m,
     source: "chrome-extension",
     userAgent: navigator.userAgent,
     time: new Date().toISOString()
   }));
   registered = true;
-  log("Registered! sessionId:", SESSION_ID, "mode:", m);
+  log("Auto-registered! sessionId:", SESSION_ID);
   return true;
 }
 
@@ -117,32 +114,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       wsConnected,
       registered
     });
-    return true;
-  }
-
-  if (msg.type === "unregister") {
-    registered = false;
-    // Tạo session ID mới và reconnect — server drop session cũ khi WS đóng
-    SESSION_ID = crypto.randomUUID();
-    chrome.storage.local.set({ sessionId: SESSION_ID });
-    log("New sessionId:", SESSION_ID);
-    if (ws) { try { ws.close(); } catch (_) {} ws = null; }
-    connectWebSocket();
-    sendResponse({ ok: true });
-    return true;
-  }
-
-  if (msg.type === "register_now") {
-    if (!wsConnected) {
-      sendResponse({ ok: false, error: "WS chua ket noi" });
-      return true;
-    }
-    if (registered) {
-      sendResponse({ ok: true, already: true });
-      return true;
-    }
-    const ok = sendRegister(msg.mode || "login");
-    sendResponse({ ok, sessionId: SESSION_ID });
     return true;
   }
 });
