@@ -239,10 +239,15 @@ async def run_login(session_id, username, password):
         err_script = "var el = document.querySelector('[data-testid=\"error-message\"]'); el ? (el.innerText || el.textContent).trim() : null;"
         res_err = await send_and_wait(session_id, "execute_script", tab({"script": err_script}), timeout=4)
         err_text = (res_err or {}).get("result")
-        
+        # Normalize: neu result la dict thi lay key "value", nguoc lai chuyen sang str
+        if isinstance(err_text, dict):
+            err_text = err_text.get("value") or err_text.get("result") or str(err_text)
+        elif err_text is not None:
+            err_text = str(err_text).strip() or None
+
         if err_text:
             # Phan loai thong bao loi dua tren text
-            if "CAPTCHA" in err_text.upper() :
+            if "CAPTCHA" in err_text.upper():
                 log(f"[{sid}] !! Loi CAPTCHA hien thi: {err_text}")
                 set_status(session_id, "Loi CAPTCHA", err_text)
             else:
