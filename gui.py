@@ -388,7 +388,6 @@ class LoginTab(QWidget):
         if not isinstance(ui, dict) or not ui:
             return "No data", "#1a1a20", "#6060a0"
         restrictions = ui.get("ban", {}).get("restrictions", None)
-        print(f"restrictions: {restrictions}")
         # restrictions là None hoặc list rỗng → sạch
         if not restrictions:
             return "OK", "#0a1a0f", "#4ae98c"
@@ -433,15 +432,27 @@ class LoginTab(QWidget):
             return
         path, _ = QFileDialog.getSaveFileName(self, "Luu file", "login_results.xlsx", "Excel Files (*.xlsx)")
         if not path: return
-        from openpyxl import Workbook
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Login Results"
-        ws.append(["Username", "Password", "Status", "Note", "Cookies"])
-        for e in core_login.acct_log:
-            ws.append([e.get('username',''), e.get('password',''), e.get('status',''), e.get('note',''), e.get('cookies','')])
-        wb.save(path)
-        QMessageBox.information(self, "Thanh cong", f"Da xuat {len(core_login.acct_log)} dong ra:\n{path}")
+        try:
+            from openpyxl import Workbook
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Login Results"
+            ws.append(["Username", "Password", "Status", "Status Account", "Token"])
+            for e in core_login.acct_log:
+                ban_text, _, _ = self._get_ban_status(e)
+                ws.append([
+                    e.get('username', ''),
+                    e.get('password', ''),
+                    e.get('status', ''),
+                    ban_text,
+                    e.get('token', ''),
+                ])
+            wb.save(path)
+            QMessageBox.information(self, "Thanh cong", f"Da xuat {len(core_login.acct_log)} dong ra:\n{path}")
+        except PermissionError:
+            QMessageBox.warning(self, "Loi", f"Khong the ghi file:\n{path}\n\nVui long dong file Excel dang mo truoc khi xuat!")
+        except Exception as ex:
+            QMessageBox.warning(self, "Loi", f"Loi xuat file: {ex}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
