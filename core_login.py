@@ -236,14 +236,14 @@ async def run_login(session_id, username, password):
         # ── 7. Kiem tra ket qua ──
         await asyncio.sleep(7)
 
-        err_script = "var el = document.querySelector('[data-testid=\"error-message\"]'); el ? (el.innerText || el.textContent).trim() : null;"
-        res_err = await send_and_wait(session_id, "execute_script", tab({"script": err_script}), timeout=4)
-        err_text = (res_err or {}).get("result")
-        # Normalize: neu result la dict thi lay key "value", nguoc lai chuyen sang str
-        if isinstance(err_text, dict):
-            err_text = err_text.get("value") or err_text.get("result") or str(err_text)
-        elif err_text is not None:
-            err_text = str(err_text).strip() or None
+        # Dung get_text (khong eval, khong bi CSP chan) de doc text loi
+        res_err = await send_and_wait(session_id, "get_text",
+                                      tab({"selector": '[data-testid="error-message"]'}), timeout=4)
+        err_result = (res_err or {}).get("result", {})
+        if isinstance(err_result, dict):
+            err_text = err_result.get("text") if err_result.get("found") else None
+        else:
+            err_text = None
 
         if err_text:
             # Phan loai thong bao loi dua tren text
@@ -254,6 +254,8 @@ async def run_login(session_id, username, password):
                 log(f"[{sid}] !! Co thong bao loi: {err_text}")
                 set_status(session_id, "Sai mat khau", err_text)
             return
+
+
         # mfa_sels = [
         #     '[data-testid="mfa-code-input"]',
         #     'input[placeholder*="code"]',

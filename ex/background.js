@@ -142,6 +142,7 @@ async function handleCommand(message) {
     case "get_url":         return await getUrl(data);
     case "get_cookies":     return await getCookies(data);
     case "check_element":   return await checkElement(data);
+    case "get_text":         return await getTextElement(data);
     case "scroll_element":  return await scrollElement(data);
     default: throw new Error(`Action không hỗ trợ: ${action}`);
   }
@@ -271,6 +272,22 @@ async function checkElement(data) {
     args: [data.selector]
   });
   return { found: !!(results?.[0]?.result) };
+}
+async function getTextElement(data) {
+  const tabId = data.tabId || (await getActiveTab())?.id;
+  if (!tabId) throw new Error("Không tìm thấy tab");
+  if (!data.selector) throw new Error("Thiếu data.selector");
+  const results = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: (sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      return (el.innerText || el.textContent || "").trim();
+    },
+    args: [data.selector]
+  });
+  const text = results?.[0]?.result ?? null;
+  return { found: text !== null, text };
 }
 async function scrollElement(data) {
   const tabId = data.tabId || (await getActiveTab())?.id;
