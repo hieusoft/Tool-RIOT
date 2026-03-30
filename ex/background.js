@@ -278,7 +278,7 @@ async function getTextElement(data) {
   if (!tabId) throw new Error("Không tìm thấy tab");
   if (!data.selector) throw new Error("Thiếu data.selector");
   const results = await chrome.scripting.executeScript({
-    target: { tabId },
+    target: { tabId, allFrames: true },
     func: (sel) => {
       const el = document.querySelector(sel);
       if (!el) return null;
@@ -286,7 +286,9 @@ async function getTextElement(data) {
     },
     args: [data.selector]
   });
-  const text = results?.[0]?.result ?? null;
+  // Lấy frame đầu tiên tìm thấy element (result !== null)
+  const hit = (results || []).find(r => r?.result !== null && r?.result !== undefined);
+  const text = hit?.result ?? null;
   return { found: text !== null, text };
 }
 async function scrollElement(data) {
