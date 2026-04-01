@@ -6,17 +6,12 @@ WS server được quản lý tập trung bởi gui.py
 import asyncio
 import json
 import random
-import time
 import sys
-import re
 import os
 import urllib.parse
 from datetime import datetime
-from faker import Faker
 
 from PyQt6.QtCore import QObject, pyqtSignal
-
-fake = Faker()
 
 if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
     try:
@@ -34,7 +29,8 @@ _loop      = None
 _running   = False
 _stop_flag = False
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
+ACCOUNT_FILE = os.path.join(BASE_DIR, "account_register.xlsx")
 
 # ── Signal bridge (asyncio → Qt) ──────────────────────────────────────────────
 class Bridge(QObject):
@@ -131,39 +127,33 @@ def set_status(session_id, status):
             break
     bridge.refresh_signal.emit()
 
-# ── Generate random accounts ──────────────────────────────────────────────────
-def _random_password(length=12):
-    """Sinh mật khẩu ngẫu nhiên đảm bảo có chữ hoa, chữ thường, số và ký tự đặc biệt."""
-    import string
-    chars = string.ascii_letters + string.digits + "!@#$%^&*"
-    pwd = [
-        random.choice(string.ascii_uppercase),
-        random.choice(string.ascii_lowercase),
-        random.choice(string.digits),
-        random.choice("!@#$%^&*"),
-    ]
-    pwd += [random.choice(chars) for _ in range(length - 4)]
-    random.shuffle(pwd)
-    return "".join(pwd)
-
-def generate_accounts(count: int):
+# ── Load accounts from Excel ──────────────────────────────────────────────────
+def load_accounts():
     """
-    Tạo ngẫu nhiên `count` tài khoản bằng Faker.
+    Đọc file account_register.xlsx.
+    Định dạng: cột A = email, cột B = username, cột C = password (dòng 1 là header).
     Trả về list [{email, username, password}].
     """
     accounts = []
-    domains  = ["gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "protonmail.com"]
-    for _ in range(count):
-        first    = fake.first_name().lower()
-        last     = fake.last_name().lower()
-        num      = fake.numerify("###")
-        domain   = random.choice(domains)
-        email    = f"{first}.{last}{num}@{domain}"
-        base_uname = re.sub(r'[^a-zA-Z0-9_]', '', fake.user_name())[:11] or "gamer"
-        username = base_uname + fake.numerify("##")
-        password = _random_password()
-        accounts.append({"email": email, "username": username, "password": password})
-    log(f">> Da tao {len(accounts)} tai khoan ngau nhien")
+    if not os.path.exists(ACCOUNT_FILE):
+        log(f"!! Khong tim thay file: {ACCOUNT_FILE}")
+        return accounts
+    try:
+        from openpyxl import load_workbook
+        wb = load_workbook(ACCOUNT_FILE, read_only=True)
+        ws = wb.active
+        for row in ws.iter_rows(min_row=2, values_only=True):  # bo qua header
+            if not row or not row[0]:
+                continue
+            email    = str(row[0]).strip() if row[0] else ""
+            username = str(row[1]).strip() if len(row) > 1 and row[1] else ""
+            password = str(row[2]).strip() if len(row) > 2 and row[2] else ""
+            if email:
+                accounts.append({"email": email, "username": username, "password": password})
+        wb.close()
+    except Exception as e:
+        log(f"!! Loi doc file Excel: {e}")
+    log(f">> Doc duoc {len(accounts)} tai khoan tu {os.path.basename(ACCOUNT_FILE)}")
     return accounts
 
 # ── Automation ────────────────────────────────────────────────────────────────
@@ -227,8 +217,6 @@ async def run_signup(session_id, email, username, password):
                     await human_delay(0.7, 1.5)
                     await human_delay(0.7, 1.5)
 
-                    # Kiểm tra lỗi "Username must be unique"
-                  
                     await asyncio.sleep(3)
                     log(f"[{sid}] Kiem tra hCaptcha...")
                     while True:
@@ -241,7 +229,6 @@ async def run_signup(session_id, email, username, password):
                         await asyncio.sleep(5)
                     log(f"[{sid}] hCaptcha da bien mat, tiep tuc...")
 
-                    # ── 7. Kiem tra ket qua ──
                     await asyncio.sleep(5)
 
                     # Dung get_text (khong eval, khong bi CSP chan) de doc text loi
@@ -254,7 +241,6 @@ async def run_signup(session_id, email, username, password):
                         err_text = None
 
                     if err_text:
-                        # Phan loai thong bao loi dua tren text
                         if "CAPTCHA" in err_text.upper():
                             log(f"[{sid}] !! Loi CAPTCHA hien thi: {err_text}")
                             set_status(session_id, "Loi CAPTCHA")
@@ -337,14 +323,13 @@ async def run_signup(session_id, email, username, password):
         await asyncio.sleep(3)
 
 
-
-async def run_all_sessions(count: int = 10):
+async def run_all_sessions(count=None):
     global _running, _stop_flag
     _stop_flag = False
 
-    accounts = generate_accounts(count)
+    accounts = load_accounts()
     if not accounts:
-        log("!! Khong tao duoc tai khoan — thu lai!")
+        log("!! Khong co tai khoan nao trong file account_register.xlsx!")
         _running = False
         bridge.refresh_signal.emit()
         return
@@ -389,7 +374,7 @@ async def run_all_sessions(count: int = 10):
     bridge.refresh_signal.emit()
 
 # ── Public triggers (called from GUI) ─────────────────────────────────────────
-def trigger_run(loop, count: int = 10):
+def trigger_run(loop, count=None):
     global _running
     if _running:
         return

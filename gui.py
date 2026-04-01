@@ -650,25 +650,11 @@ class RegisterTab(QWidget):
         self.btn_export.setObjectName("btn_export"); self.btn_export.setFixedHeight(32)
         self.btn_export.clicked.connect(self._export_excel)
 
-        # ── Spinbox so luong tai khoan random ──
-        lbl_count = QLabel("So luong:")
-        lbl_count.setStyleSheet("color:#8da2cc; font-size:11px; background:transparent;")
-        self.spin_count = QSpinBox()
-        self.spin_count.setRange(1, 9999)
-        self.spin_count.setValue(10)
-        self.spin_count.setFixedHeight(32)
-        self.spin_count.setFixedWidth(72)
-        self.spin_count.setStyleSheet(
-            "QSpinBox { background:#1b2331; color:#c8d8f0; border:1px solid #2f3c51;"
-            " padding:2px 6px; font-size:12px; }"
-            "QSpinBox::up-button, QSpinBox::down-button { width:16px; }"
-        )
-
         self.btn_start = QPushButton("▶  BAT DAU")
         self.btn_start.setObjectName("btn_start_register"); self.btn_start.setFixedHeight(32)
         self.btn_start.clicked.connect(self._on_start)
 
-        for w in [self.btn_stop, self.btn_export, lbl_count, self.spin_count, self.btn_start]:
+        for w in [self.btn_stop, self.btn_export, self.btn_start]:
             h.addWidget(w)
         root_v.addWidget(tb)
 
@@ -735,7 +721,7 @@ class RegisterTab(QWidget):
     def _on_start(self):
         if core_register._running: return
         self.btn_start.setEnabled(False); self.btn_stop.setEnabled(True)
-        core_register.trigger_run(_loop, self.spin_count.value())
+        core_register.trigger_run(_loop)
 
     def _on_log(self, msg): self.log_box.append(msg)
     def _clear_log(self): self.log_box.clear()
