@@ -34,8 +34,7 @@ _loop      = None
 _running   = False
 _stop_flag = False
 
-BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
-ACCOUNT_FILE = os.path.join(BASE_DIR, "account_register.xlsx")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # ── Signal bridge (asyncio → Qt) ──────────────────────────────────────────────
 class Bridge(QObject):
@@ -132,32 +131,39 @@ def set_status(session_id, status):
             break
     bridge.refresh_signal.emit()
 
-# ── Load accounts ─────────────────────────────────────────────────────────────
-def load_accounts():
+# ── Generate random accounts ──────────────────────────────────────────────────
+def _random_password(length=12):
+    """Sinh mật khẩu ngẫu nhiên đảm bảo có chữ hoa, chữ thường, số và ký tự đặc biệt."""
+    import string
+    chars = string.ascii_letters + string.digits + "!@#$%^&*"
+    pwd = [
+        random.choice(string.ascii_uppercase),
+        random.choice(string.ascii_lowercase),
+        random.choice(string.digits),
+        random.choice("!@#$%^&*"),
+    ]
+    pwd += [random.choice(chars) for _ in range(length - 4)]
+    random.shuffle(pwd)
+    return "".join(pwd)
+
+def generate_accounts(count: int):
     """
-    Đọc file account_register.xlsx
-    Sheet1: cột A=email, B=username, C=password
+    Tạo ngẫu nhiên `count` tài khoản bằng Faker.
+    Trả về list [{email, username, password}].
     """
     accounts = []
-    if not os.path.exists(ACCOUNT_FILE):
-        log(f"!! Khong tim thay file: {ACCOUNT_FILE}")
-        return accounts
-    try:
-        from openpyxl import load_workbook
-        wb = load_workbook(ACCOUNT_FILE, read_only=True)
-        ws = wb.active
-        for row in ws.iter_rows(min_row=2, values_only=True):  # skip header
-            if not row or not row[0]:
-                continue
-            email    = str(row[0]).strip()
-            username = str(row[1]).strip() if len(row) > 1 and row[1] else ""
-            password = str(row[2]).strip() if len(row) > 2 and row[2] else ""
-            if email:
-                accounts.append({"email": email, "username": username, "password": password})
-        wb.close()
-    except Exception as e:
-        log(f"!! Loi doc file Excel: {e}")
-    log(f">> Doc duoc {len(accounts)} tai khoan tu {os.path.basename(ACCOUNT_FILE)}")
+    domains  = ["gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "protonmail.com"]
+    for _ in range(count):
+        first    = fake.first_name().lower()
+        last     = fake.last_name().lower()
+        num      = fake.numerify("###")
+        domain   = random.choice(domains)
+        email    = f"{first}.{last}{num}@{domain}"
+        base_uname = re.sub(r'[^a-zA-Z0-9_]', '', fake.user_name())[:11] or "gamer"
+        username = base_uname + fake.numerify("##")
+        password = _random_password()
+        accounts.append({"email": email, "username": username, "password": password})
+    log(f">> Da tao {len(accounts)} tai khoan ngau nhien")
     return accounts
 
 # ── Automation ────────────────────────────────────────────────────────────────
@@ -222,29 +228,8 @@ async def run_signup(session_id, email, username, password):
                     await human_delay(0.7, 1.5)
 
                     # Kiểm tra lỗi "Username must be unique"
-                    err_sel = '.errorMessage'
-                    while True:
-                        err_res   = await send_and_wait(session_id, "check_element",
-                                                        {"selector": err_sel}, timeout=5)
-                        err_found = (err_res or {}).get("result", {}).get("found", False)
-                        if not err_found:
-                            break
-                        txt_res  = await send_and_wait(session_id, "get_text",
-                                                       {"selector": err_sel}, timeout=5)
-                        err_text = str((txt_res or {}).get("result", {}).get("text", ""))
-                        if "unique" not in err_text.lower() and "username" not in err_text.lower():
-                            break
-                        log(f"[{sid}] Username trung lap — doi username moi...")
-                        base     = re.sub(r'[^a-zA-Z0-9_]', '', fake.user_name())[:13] or "user"
-                        username = base + fake.numerify("##")
-                        await sw("clear_text", {"selector": '[data-testid="riot-signup-username"]'})
-                        await human_delay(0.3, 0.6)
-                        await sw("type_text", {"selector": '[data-testid="riot-signup-username"]',
-                                               "value": username}, timeout=20)
-                        await human_delay(0.5, 1.0)
-                        await sw("click", {"selector": '[data-testid="btn-signup-submit"]'})
-                        await human_delay(1.0, 2.0)
-
+                  
+                    await asyncio.sleep(3)
                     log(f"[{sid}] Kiem tra hCaptcha...")
                     while True:
                         res   = await send_and_wait(session_id, "check_element",
@@ -255,6 +240,28 @@ async def run_signup(session_id, email, username, password):
                         log(f"[{sid}] hCaptcha dang hien — cho 5s...")
                         await asyncio.sleep(5)
                     log(f"[{sid}] hCaptcha da bien mat, tiep tuc...")
+
+                    # ── 7. Kiem tra ket qua ──
+                    await asyncio.sleep(5)
+
+                    # Dung get_text (khong eval, khong bi CSP chan) de doc text loi
+                    res_err = await send_and_wait(session_id, "get_text",
+                                                {"selector": '[data-testid="error-message"]'}, timeout=4)
+                    err_result = (res_err or {}).get("result", {})
+                    if isinstance(err_result, dict):
+                        err_text = err_result.get("text") if err_result.get("found") else None
+                    else:
+                        err_text = None
+
+                    if err_text:
+                        # Phan loai thong bao loi dua tren text
+                        if "CAPTCHA" in err_text.upper():
+                            log(f"[{sid}] !! Loi CAPTCHA hien thi: {err_text}")
+                            set_status(session_id, "Loi CAPTCHA")
+                        else:
+                            log(f"[{sid}] !! Co thong bao loi: {err_text}")
+                            set_status(session_id, "Sai mat khau")
+                        return
 
         # ── Lấy token từ active tab (sau redirect về localhost) ──
         set_status(session_id, "Lay token...")
@@ -331,13 +338,13 @@ async def run_signup(session_id, email, username, password):
 
 
 
-async def run_all_sessions():
+async def run_all_sessions(count: int = 10):
     global _running, _stop_flag
     _stop_flag = False
 
-    accounts = load_accounts()
+    accounts = generate_accounts(count)
     if not accounts:
-        log("!! Khong co tai khoan nao trong account_register.xlsx (dinh dang: email | username | password)")
+        log("!! Khong tao duoc tai khoan — thu lai!")
         _running = False
         bridge.refresh_signal.emit()
         return
@@ -382,12 +389,13 @@ async def run_all_sessions():
     bridge.refresh_signal.emit()
 
 # ── Public triggers (called from GUI) ─────────────────────────────────────────
-def trigger_run(loop):
+def trigger_run(loop, count: int = 10):
     global _running
     if _running:
         return
     _running = True
-    asyncio.run_coroutine_threadsafe(run_all_sessions(), loop)
+    asyncio.run_coroutine_threadsafe(run_all_sessions(count), loop)
+
 
 def trigger_stop():
     global _stop_flag, _running
